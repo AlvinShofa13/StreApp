@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.studiopocket.app"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.studiopocket.app"

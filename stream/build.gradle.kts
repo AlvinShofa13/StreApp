@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.studiopocket.stream"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 29

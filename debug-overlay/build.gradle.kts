@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace = "com.studiopocket.debug"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 29
