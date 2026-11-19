@@ -9,4 +9,5 @@
     <string name="uvc_status_disconnected">Capture card disconnected. Replug the cable.</string>
     <string name="uvc_status_error">Capture card failed to open. Unplug and replug.</string>
     <string name="uvc_status_no_permission">Camera permission is required for the capture card.</string>
+    <string name="diagnostic_title">Diagnostic log</string>
 </resources>

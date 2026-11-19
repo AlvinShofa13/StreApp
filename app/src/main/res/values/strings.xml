@@ -9,4 +9,5 @@
     <string name="uvc_status_disconnected">Capture card terputus. Colok ulang kabelnya.</string>
     <string name="uvc_status_error">Capture card gagal dibuka. Lepas lalu colok ulang.</string>
     <string name="uvc_status_no_permission">Izin kamera dibutuhkan untuk capture card.</string>
+    <string name="diagnostic_title">Catatan diagnostik</string>
 </resources>

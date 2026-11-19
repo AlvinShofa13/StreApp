@@ -27,6 +27,7 @@ class UvcPreviewActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Diag.catat("preview dibuat")
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // uji 10 menit tanpa layar tidur
         val root = FrameLayout(this).apply { setBackgroundColor(0xFFF6F7F9.toInt()) }
         val kolom = LinearLayout(this).apply {
@@ -57,6 +58,7 @@ class UvcPreviewActivity : Activity() {
         debugOverlay = DebugOverlay(root, stats)
 
         source = UvcSource(this, getString(R.string.uvc_source_name))
+        source.log = { Diag.catat(it) }
         stats.registerSource(source.name)
         source.statusListener = object : Source.StatusListener {
             override fun onStatusChanged(source: Source, status: SourceStatus) = tampilkanStatus()
@@ -85,8 +87,10 @@ class UvcPreviewActivity : Activity() {
         debugOverlay.toggle() // T1.1: fps aktual harus langsung terlihat
 
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            Diag.catat("izin kamera sudah ada")
             mulai()
         } else {
+            Diag.catat("minta izin kamera")
             requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_KAMERA)
         }
     }
@@ -98,12 +102,23 @@ class UvcPreviewActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_KAMERA) return
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) mulai()
-        else statusView.setText(R.string.uvc_status_no_permission)
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            Diag.catat("izin kamera diberikan")
+            mulai()
+        } else {
+            Diag.catat("izin kamera ditolak")
+            statusView.setText(R.string.uvc_status_no_permission)
+        }
     }
 
     private fun mulai() {
-        source.start()
+        Diag.catat("mulai sumber")
+        try {
+            source.start()
+        } catch (t: Throwable) {
+            Diag.catat("start gagal", t)
+            statusView.setText(R.string.uvc_status_error)
+        }
         tampilkanStatus()
     }
 
@@ -121,6 +136,7 @@ class UvcPreviewActivity : Activity() {
     }
 
     override fun onDestroy() {
+        Diag.catat("preview ditutup")
         if (::source.isInitialized) source.stop()
         debugOverlay.stop()
         super.onDestroy()
