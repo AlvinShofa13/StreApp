@@ -2,4 +2,11 @@
 <resources>
     <string name="app_name">StudioPocket</string>
     <string name="debug_overlay_toggle">Debug overlay</string>
+    <string name="uvc_preview_open">Capture card preview</string>
+    <string name="uvc_source_name">UVC</string>
+    <string name="uvc_status_waiting">Waiting for capture card</string>
+    <string name="uvc_status_active">Capture card active: %1$d x %2$d @ %3$d fps</string>
+    <string name="uvc_status_disconnected">Capture card disconnected. Replug the cable.</string>
+    <string name="uvc_status_error">Capture card failed to open. Unplug and replug.</string>
+    <string name="uvc_status_no_permission">Camera permission is required for the capture card.</string>
 </resources>

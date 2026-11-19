@@ -13,4 +13,6 @@ android {
 
 dependencies {
     implementation(project(":core-model"))
+    implementation(libs.uvc.android)
+    testImplementation(libs.junit)
 }

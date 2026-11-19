@@ -1,6 +1,7 @@
 package com.studiopocket.app
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.FrameLayout
@@ -21,6 +22,10 @@ class MainActivity : Activity() {
         kolom.addView(Button(this).apply {
             setText(R.string.debug_overlay_toggle)
             setOnClickListener { debugOverlay.toggle() }
+        })
+        kolom.addView(Button(this).apply {
+            setText(R.string.uvc_preview_open)
+            setOnClickListener { startActivity(Intent(this@MainActivity, UvcPreviewActivity::class.java)) }
         })
         root.addView(kolom)
         debugOverlay = DebugOverlay(root, DebugStats())

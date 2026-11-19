@@ -3,11 +3,13 @@ agp = "9.3.3"
 kotlin = "2.2.10"
 junit = "4.13.2"
 kotlinxSerialization = "1.6.3"
+uvcAndroid = "1.0.13"
 
 [libraries]
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 junit = { module = "junit:junit", version.ref = "junit" }
+uvc-android = { module = "com.herohan:UVCAndroid", version.ref = "uvcAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
