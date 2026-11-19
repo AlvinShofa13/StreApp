@@ -9,6 +9,7 @@ Aplikasi Android untuk merekam dan menyiarkan gabungan beberapa sumber video dan
 - Hanya Android. Minimum Android 10 (API 29). Uji utama di Android 12.
 - Resolusi maksimal 1080p. Default 720p 30 fps pada kombinasi sumber yang berat.
 - Semua fitur harus bisa jalan bersamaan (capture card, layar, kamera, Camera Node, semua audio), bukan memilih salah satu.
+- Chat langsung hanya dilihat sendiri oleh pengguna. Satu-satunya pengecualian dari prinsip "tanpa akun" adalah chat YouTube, yang membutuhkan login Google atau kunci API. Pengecualian ini berlaku khusus untuk modul `chat`.
 
 ## Perangkat acuan
 
@@ -43,10 +44,11 @@ source-camera/        Kamera ponsel
 source-screen/        Rekam layar
 source-remote/        Camera Node lewat jaringan lokal (host dan node)
 stream/               RTMP/RTMPS, profil akun platform
+chat/                 Pembaca chat langsung per platform (hanya tampil di layar pengguna)
 debug-overlay/        Overlay fps, drop frame, CPU, suhu, memori
 ```
 
-Aturan dependensi: `core-model` tidak bergantung pada modul lain. Modul `source-*` hanya bergantung pada `core-model` dan `core-video` (untuk menyerahkan frame). `app` boleh bergantung pada semuanya. Tidak ada dependensi melingkar.
+Aturan dependensi: `core-model` tidak bergantung pada modul lain. Modul `source-*` hanya bergantung pada `core-model` dan `core-video` (untuk menyerahkan frame). `chat` hanya bergantung pada `core-model` dan `stream` (untuk profil akun). `app` boleh bergantung pada semuanya. Tidak ada dependensi melingkar.
 
 ## Aturan arsitektur (wajib)
 
@@ -59,6 +61,7 @@ Aturan dependensi: `core-model` tidak bergantung pada modul lain. Modul `source-
 7. Rekaman harus bisa dipulihkan setelah crash (segmen berkala atau fragmented MP4).
 8. Rekaman dan siaran berjalan di foreground service dengan tipe yang sesuai (mediaProjection, camera, microphone) dan notifikasi status.
 9. Kebijakan termal berada di `core-thermal` dan hanya memberi perintah penurunan kualitas lewat satu antarmuka. Modul lain tidak membaca suhu sendiri.
+10. Chat terpisah total dari pipeline video. Chat hanya dilihat pengguna: tidak dirender ke scene, tidak masuk compositor atau encoder, tidak terekam, tidak tersiar. Chat baca-saja (tanpa membalas atau moderasi), pesan tidak disimpan ke penyimpanan, memori dibatasi (sekitar 200 pesan terbaru), pembaruan UI dikelompokkan, dan panel berhenti memperbarui saat layar mati. Kegagalan atau putusnya chat tidak boleh memengaruhi rekaman atau siaran.
 
 ## Aturan performa
 
@@ -93,6 +96,7 @@ Setiap perubahan pada jalur video atau audio harus menyebut dampaknya pada angka
 
 - Menambah fitur di luar PRD (filter lanjutan, plugin, editor video, dukungan iOS, 4K).
 - Menambah pustaka berbayar, iklan, analitik, atau yang membutuhkan akun.
-- Menyimpan stream key dalam teks biasa. Gunakan Android Keystore.
+- Menyimpan stream key, token login, atau kunci API dalam teks biasa atau di dalam repo. Gunakan Android Keystore, dan jangan pernah melakukan commit kredensial.
+- Memakai pustaka atau metode tidak resmi untuk membaca chat TikTok tanpa persetujuan saya. Tandai sebagai belum tersedia dan catat di `docs/BATASAN.md`.
 - Mengirim data apa pun keluar perangkat selain siaran yang dimulai pengguna dan koneksi Camera Node yang dipasangkan.
 - Mengubah target performa agar kode lolos.

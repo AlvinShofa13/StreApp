@@ -37,6 +37,7 @@ Ketentuan pemakaian: aplikasi ini untuk pemakaian pribadi di perangkat milik sen
 - Dukungan iOS, desktop, atau web.
 - Resolusi di atas 1080p (4K).
 - Distribusi komersial, iklan, akun pengguna, dan fitur berbayar.
+- Chat yang tampil di rekaman atau siaran, chat dibacakan dengan suara, serta membalas atau memoderasi chat.
 
 ## 4. Target Pengguna
 
@@ -177,6 +178,30 @@ Live streaming ke YouTube, Twitch, dan TikTok masuk 1.0 selama bisa dijalankan t
 
 Syarat akun di tiap platform berada di luar kendali aplikasi. TikTok hanya memberi stream key kepada akun yang memenuhi syarat dari TikTok, dan syarat itu dapat berubah. Satu akun TikTok Anda sudah memenuhi syarat dan satu lagi belum, sehingga pemilihan profil akun menjadi wajib, dan profil yang belum memenuhi syarat ditandai belum siap. YouTube dan Twitch tetap berjalan bila TikTok tidak bisa dipakai.
 
+### 7.11 Chat Langsung (P1)
+
+Panel Chat menampilkan pesan chat penonton secara real time hanya di layar pengguna. Chat tidak masuk ke scene, tidak terekam, dan tidak ikut tersiar. Fitur ini hanya aktif saat siaran langsung berjalan.
+
+- FR-11.1 Panel Chat dapat dibuka sebagai panel di layar utama (potret) atau jendela melayang yang bisa digeser dan diubah ukurannya (lanskap), dan dapat disembunyikan dengan satu ketukan.
+- FR-11.2 Setiap pesan menampilkan nama pengirim, isi pesan, dan penanda peran sederhana (moderator, pelanggan) berupa teks atau ikon garis. Isi pesan dari penonton ditampilkan apa adanya; aturan tanpa emoji berlaku untuk antarmuka aplikasi, bukan untuk pesan penonton.
+- FR-11.3 Chat mengikuti profil akun siaran yang dipilih (FR-10.2). Profil menyimpan nama kanal atau pengenal siaran yang diperlukan untuk menyambung ke chat.
+- FR-11.4 Pengguliran otomatis ke pesan terbaru; berhenti otomatis saat pengguna menggulir ke atas, dengan tombol untuk kembali ke pesan terbaru.
+- FR-11.5 Ukuran teks dapat diatur. Jumlah pesan yang disimpan di memori dibatasi (misalnya 200 pesan terbaru).
+- FR-11.6 Penyaring sederhana opsional untuk menyembunyikan pesan bot dan perintah.
+- FR-11.7 Baca-saja: tidak ada fitur membalas, menghapus pesan, atau moderasi pada 1.0.
+- FR-11.8 Status sambungan chat (tersambung, menyambung ulang, tidak tersedia) ditampilkan, dengan sambung ulang otomatis tanpa memengaruhi siaran atau rekaman.
+- FR-11.9 Hemat beban: pembaruan tampilan dikelompokkan (maksimal beberapa kali per detik), panel berhenti memperbarui saat layar mati, dan panel tidak melewati compositor video.
+- FR-11.10 Pesan chat tidak disimpan ke penyimpanan setelah siaran selesai.
+- FR-11.11 Menampilkan chat di ponsel kedua (Camera Node) adalah P2 dan tidak termasuk 1.0.
+
+Sumber data chat berbeda di tiap platform:
+
+| Platform | Cara membaca chat | Catatan |
+| --- | --- | --- |
+| Twitch | Koneksi baca-saja anonim ke chat kanal | Tanpa login, paling mudah, dikerjakan pertama |
+| YouTube | YouTube Live Streaming API (pesan live chat) | Butuh login Google atau kunci API dan ada batas kuota; menjadi pengecualian dari prinsip tanpa akun, khusus untuk fitur ini |
+| TikTok | Belum ada jalur resmi yang diketahui untuk membaca chat dari sisi pembuat siaran | Tidak dijamin; pustaka tidak resmi rapuh dan berisiko melanggar ketentuan platform, jadi ditandai belum tersedia pada 1.0 dan dicek ulang saat pengembangan |
+
 ## 8. Desain Antarmuka
 
 ### 8.1 Prinsip
@@ -210,6 +235,7 @@ Syarat akun di tiap platform berada di luar kendali aplikasi. TikTok hanya membe
 5. Pengaturan: kualitas, penyimpanan, perangkat audio, mode hemat daya, bantuan.
 6. Layar Dua Ponsel: pairing, status koneksi, kontrol jarak jauh untuk 2 sampai 3 Camera Node.
 7. Panel Siaran: pilihan platform, stream key, status siaran, bitrate, dan dropped frame.
+8. Panel Chat: pesan chat penonton secara real time, hanya terlihat oleh pengguna dan tidak ikut terekam atau tersiar.
 
 ### 8.4 Mode Potret dan Lanskap
 
@@ -289,6 +315,8 @@ Seluruh komponen dipilih dari API bawaan Android atau pustaka berlisensi bebas, 
 | Audio | AudioRecord dan Oboe | Apache 2.0 |
 | Antar ponsel | WebRTC atau SRT | BSD dan MPL 2.0 |
 | RTMP | RootEncoder atau implementasi sendiri | Apache 2.0 |
+| Chat Twitch | Koneksi WebSocket baca-saja anonim ke chat Twitch | Layanan gratis, tanpa login |
+| Chat YouTube | YouTube Live Streaming API (pesan live chat) | Gratis dengan batas kuota, perlu login Google atau kunci API |
 
 Dihindari: SDK berbayar, pustaka iklan atau analitik pihak ketiga, dan build FFmpeg berlisensi GPL.
 
@@ -327,7 +355,7 @@ Dihindari: SDK berbayar, pustaka iklan atau analitik pihak ketiga, dan build FFm
 | Fase | Cakupan |
 | --- | --- |
 | MVP (Android) | Capture card, rekam layar, kamera lokal, mic, mixer, preview, scene dan preset, perekaman bersamaan, manajemen termal dasar |
-| 1.0 | Mode dua ponsel dengan 2 sampai 3 Camera Node, kamera eksternal USB, multi-track audio, pemulihan file, daftar perangkat kompatibel, live streaming RTMP ke YouTube, Twitch, dan TikTok (bersyarat, bila stabil di perangkat acuan) |
+| 1.0 | Mode dua ponsel dengan 2 sampai 3 Camera Node, kamera eksternal USB, multi-track audio, pemulihan file, daftar perangkat kompatibel, live streaming RTMP ke YouTube, Twitch, dan TikTok (bersyarat, bila stabil di perangkat acuan), serta Panel Chat untuk Twitch dan YouTube |
 | 1.1 | Overlay teks dan gambar, penanda waktu, ekspor dan impor proyek |
 | Ditunda | iOS, resolusi di atas 1080p, siaran multi-platform, layanan streaming berbayar |
 
@@ -343,6 +371,7 @@ Dihindari: SDK berbayar, pustaka iklan atau analitik pihak ketiga, dan build FFm
 | Proses latar belakang dimatikan sistem | Rekaman terhenti | Foreground service, panduan pengaturan baterai per merek |
 | Perangkat acuan berspek rendah (Helio G99, RAM 4 GB) menjalankan banyak sumber | Frame drop, panas, atau aplikasi dimatikan sistem karena memori habis | Profil beban bertingkat, default 720p 30 fps pada kombinasi berat, anggaran memori 1,2 GB |
 | Syarat akun dan kebijakan platform siaran berubah, terutama TikTok | Siaran ke platform tertentu tidak bisa dipakai | Template per platform yang mudah diubah, YouTube dan Twitch sebagai jalur utama |
+| Sumber data chat tidak stabil atau tidak tersedia (terutama TikTok), dan kuota API YouTube terbatas | Panel Chat kosong atau terputus pada platform tertentu | Twitch dikerjakan dulu, lalu YouTube, TikTok ditandai belum dijamin; status sambungan chat selalu terlihat |
 
 ## 14. Keputusan Produk dan Pertanyaan Tersisa
 
@@ -354,6 +383,7 @@ Dihindari: SDK berbayar, pustaka iklan atau analitik pihak ketiga, dan build FFm
 | Live streaming di 1.0 | Ya untuk YouTube, TikTok, dan Twitch bila bisa tanpa layanan berbayar; bila tidak, boleh ditunda | Bagian 7.10 dan roadmap |
 | Jumlah Camera Node | 2 sampai 3 | FR-6.8 |
 | Perangkat acuan | Android 12, Exynos 9825, Helio G99, RAM 4 GB | Bagian 5 dan 9.1 |
+| Fitur chat langsung | Dilihat sendiri oleh pengguna, tidak ikut terekam atau tersiar | Bagian 7.11 dan 8.3 |
 
 Jawaban atas pertanyaan tambahan:
 
@@ -375,3 +405,4 @@ Jawaban atas pertanyaan tambahan:
 - Aplikasi dipasang langsung sebagai APK tanpa toko aplikasi (sudah dikonfirmasi), sehingga persyaratan toko dan monetisasi tidak dibahas.
 - Target performa dibuat bertingkat karena Helio G99 dan RAM 4 GB adalah batas bawah perangkat acuan.
 - Daftar lisensi pustaka pada bagian 9.6 adalah perkiraan awal dan harus diverifikasi sebelum integrasi.
+- Chat langsung hanya dilihat sendiri oleh pengguna (sudah dikonfirmasi). Ketersediaan sumber chat tiap platform, terutama TikTok, perlu dicek ulang saat pengembangan karena dapat berubah.

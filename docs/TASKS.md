@@ -160,6 +160,27 @@ Format laporan angka dari saya ke agen: perangkat, profil, fps aktual, drop fram
 - Diuji oleh: Saya.
 - Bila hasil tidak stabil di Helio G99, tandai fitur ini ditunda sesuai PRD.
 
+### T6.4 Panel Chat (UI dengan data tiruan)
+- Modul `chat` dan Panel Chat di `app`: panel di layar utama (potret) atau jendela melayang yang bisa digeser dan diubah ukurannya (lanskap), disembunyikan dengan satu ketukan. Pesan menampilkan nama, isi, dan penanda peran (teks atau ikon garis). Pengguliran otomatis yang berhenti saat pengguna menggulir ke atas, tombol kembali ke pesan terbaru, ukuran teks dapat diatur, batas sekitar 200 pesan, penyaring bot dan perintah opsional, dan indikator status sambungan.
+- Kerjakan lebih dulu dengan sumber pesan tiruan (generator pesan acak) lewat antarmuka `ChatSource`, sehingga UI bisa diuji tanpa platform.
+- Selesai bila: dengan 20 pesan per detik dari generator tiruan, panel tetap lancar, pembaruan UI dikelompokkan, memori tidak membengkak, panel berhenti memperbarui saat layar mati, dan panel tidak muncul di hasil rekaman maupun di siaran. Unit test untuk batas pesan dan penyaring lulus.
+- Diuji oleh: Agen (unit test), Saya (tampilan dan hasil rekaman).
+
+### T6.5 Chat Twitch
+- Implementasi `ChatSource` untuk Twitch lewat koneksi WebSocket baca-saja anonim. Nama kanal disimpan di profil akun siaran (T6.2) dan panel menyambung otomatis saat siaran dimulai dengan profil tersebut. Sambung ulang otomatis dan status sambungan.
+- Selesai bila: pesan chat kanal uji tampil real time di Panel Chat selama siaran 10 menit, tanpa login. Memutus lalu menyalakan jaringan membuat chat tersambung lagi, dan siaran serta rekaman tidak terganggu.
+- Diuji oleh: Saya (kanal Twitch), Agen (log).
+
+### T6.6 Chat YouTube
+- Implementasi `ChatSource` untuk YouTube lewat YouTube Live Streaming API (pesan live chat). Perlu login Google atau kunci API, ini pengecualian yang sudah disetujui pada `CLAUDE.md`. Token disimpan di Android Keystore, polling mengikuti interval yang diberikan API, dan kuota dihitung serta ditampilkan di pengaturan.
+- Selesai bila: pesan chat siaran YouTube tampil di Panel Chat selama 10 menit tanpa melampaui kuota, dan putus jaringan tidak mengganggu siaran atau rekaman.
+- Diuji oleh: Saya (akun YouTube), Agen (log).
+
+### T6.7 Penyelidikan chat TikTok (spike)
+- Teliti apakah ada jalur resmi dan stabil untuk membaca chat TikTok dari sisi pembuat siaran. Tulis temuan di `docs/BATASAN.md`. Jangan mengimplementasikan pustaka tidak resmi tanpa persetujuan saya.
+- Selesai bila: ada laporan singkat berisi jalur yang ditemukan, syarat akun, risiko, dan rekomendasi (kerjakan atau tandai belum tersedia).
+- Diuji oleh: Agen (riset), Saya (keputusan).
+
 ---
 
 ## Tahap 7. Penyelesaian

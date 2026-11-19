@@ -25,5 +25,6 @@ dependencies {
     implementation(project(":source-screen"))
     implementation(project(":source-remote"))
     implementation(project(":stream"))
+    implementation(project(":chat"))
     implementation(project(":debug-overlay"))
 }
