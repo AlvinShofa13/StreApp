@@ -39,10 +39,21 @@ class UvcPreviewActivity : Activity() {
             textSize = 16f
             text = getString(R.string.uvc_status_waiting)
         }
-        val preview = PreviewView(this).apply { setBackgroundColor(0xFF1F2933.toInt()) }
+        val preview = PreviewView(this)
+        // Warna latar di wadah: TextureView menolak background drawable.
+        val previewBox = FrameLayout(this).apply {
+            setBackgroundColor(0xFF1F2933.toInt())
+            addView(
+                preview,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        }
         kolom.addView(statusView)
         kolom.addView(
-            preview,
+            previewBox,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
