@@ -1,141 +1,141 @@
 package com.studiopocket.app
 
 import android.Manifest
-import android.app.Activity
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.SurfaceTexture
 import android.os.Bundle
 import android.view.TextureView
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.studiopocket.app.ui.theme.StreAppTheme
 import com.studiopocket.debug.DebugOverlay
 import com.studiopocket.debug.DebugStats
 import com.studiopocket.model.Source
 import com.studiopocket.model.SourceStatus
 import com.studiopocket.source.uvc.UvcSource
 
-class UvcPreviewActivity : Activity() {
+/**
+ * Layar Pratinjau UVC Direct (Capture Card / Webcam USB).
+ */
+class UvcPreviewActivity : ComponentActivity() {
 
     private val stats = DebugStats()
     private lateinit var source: UvcSource
-    private lateinit var statusView: TextView
-    private lateinit var debugOverlay: DebugOverlay
+    private var debugOverlay: DebugOverlay? = null
+
+    private var statusMessageState by mutableStateOf("Menunggu capture card...")
+    private var sourceStatusState by mutableStateOf(SourceStatus.SIAGA)
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { permissions ->
+        if (permissions.entries.all { it.value }) {
+            mulai()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Diag.catat("preview dibuat")
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // uji 10 menit tanpa layar tidur
-        val root = FrameLayout(this).apply { setBackgroundColor(0xFFF6F7F9.toInt()) }
-        val kolom = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 64, 48, 48)
-        }
-        statusView = TextView(this).apply {
-            setTextColor(0xFF5B6670.toInt())
-            textSize = 16f
-            text = getString(R.string.uvc_status_waiting)
-        }
-        val preview = PreviewView(this)
-        // Warna latar di wadah: TextureView menolak background drawable.
-        val previewBox = FrameLayout(this).apply {
-            setBackgroundColor(0xFF1F2933.toInt())
-            addView(
-                preview,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                ),
-            )
-        }
-        kolom.addView(statusView)
-        kolom.addView(
-            previewBox,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ),
-        )
-        kolom.addView(Button(this).apply {
-            setText(R.string.debug_overlay_toggle)
-            setOnClickListener { debugOverlay.toggle() }
-        })
-        root.addView(kolom)
-        setContentView(root)
-
-        debugOverlay = DebugOverlay(root, stats)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         source = UvcSource(this, getString(R.string.uvc_source_name))
         source.log = { Diag.catat(it) }
         stats.registerSource(source.name)
         source.statusListener = object : Source.StatusListener {
-            override fun onStatusChanged(source: Source, status: SourceStatus) = tampilkanStatus()
-        }
-
-        preview.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
-                source.setPreview(texture)
-            }
-
-            override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) = Unit
-
-            override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
-                source.setPreview(null)
-                // false: removeSurface diproses async oleh pustaka, jangan lepas tekstur lebih dulu.
-                // shortcut: tekstur menunggu GC saat view dihancurkan; perbaiki bila layar sering dibuka-tutup.
-                return false
-            }
-
-            override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
-                stats.noteFrameIn(source.name)
-                stats.noteFrameOut(source.name)
+            override fun onStatusChanged(source: Source, status: SourceStatus) {
+                sourceStatusState = status
+                tampilkanStatus()
             }
         }
 
-        debugOverlay.toggle() // T1.1: fps aktual harus langsung terlihat
+        val rootFrameLayout = FrameLayout(this)
+        val composeView = ComposeView(this).apply {
+            setContent {
+                StreAppTheme {
+                    UvcScreen(
+                        statusMessage = statusMessageState,
+                        sourceStatus = sourceStatusState,
+                        onBack = { finish() },
+                        onToggleDebugOverlay = {
+                            if (debugOverlay == null) {
+                                debugOverlay = DebugOverlay(rootFrameLayout, stats)
+                            }
+                            debugOverlay?.toggle()
+                        },
+                        onBindTexture = { texture ->
+                            source.setPreview(texture)
+                        },
+                    )
+                }
+            }
+        }
+
+        rootFrameLayout.addView(composeView)
+        setContentView(rootFrameLayout)
 
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            Diag.catat("izin kamera sudah ada")
             mulai()
         } else {
-            Diag.catat("minta izin kamera")
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_KAMERA)
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQ_KAMERA) return
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            Diag.catat("izin kamera diberikan")
-            mulai()
-        } else {
-            Diag.catat("izin kamera ditolak")
-            statusView.setText(R.string.uvc_status_no_permission)
+            requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
     }
 
     private fun mulai() {
-        Diag.catat("mulai sumber")
         try {
             source.start()
         } catch (t: Throwable) {
-            Diag.catat("start gagal", t)
-            statusView.setText(R.string.uvc_status_error)
+            statusMessageState = getString(R.string.uvc_status_error)
         }
         tampilkanStatus()
     }
 
     private fun tampilkanStatus() {
         val s = source.activeSize
-        statusView.text = when {
+        statusMessageState = when {
             source.status == SourceStatus.AKTIF && s != null ->
                 getString(R.string.uvc_status_active, s.width, s.height, s.fps)
 
@@ -147,28 +147,124 @@ class UvcPreviewActivity : Activity() {
     }
 
     override fun onDestroy() {
-        Diag.catat("preview ditutup")
         if (::source.isInitialized) source.stop()
-        debugOverlay.stop()
+        debugOverlay?.stop()
         super.onDestroy()
-    }
-
-    private companion object {
-        const val REQ_KAMERA = 1
     }
 }
 
-/** TextureView 16:9 sesuai keluaran capture card 720p/1080p. */
-private class PreviewView(context: Context) : TextureView(context) {
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val lebar = MeasureSpec.getSize(widthMeasureSpec)
-        val tinggi = lebar * 9 / 16
-        val batas = MeasureSpec.getSize(heightMeasureSpec)
-        val tinggiAkhir = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.UNSPECIFIED) {
-            tinggi
-        } else {
-            tinggi.coerceAtMost(batas)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UvcScreen(
+    statusMessage: String,
+    sourceStatus: SourceStatus,
+    onBack: () -> Unit,
+    onToggleDebugOverlay: () -> Unit,
+    onBindTexture: (SurfaceTexture?) -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Capture Card USB (UVC)",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1F2933),
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Text("←", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1F2933))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF6F7F9)),
+            )
+        },
+        containerColor = Color(0xFFF6F7F9),
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // 1. 16:9 Direct UVC Preview Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2933)),
+                elevation = CardDefaults.cardElevation(4.dp),
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    AndroidView(
+                        factory = { ctx ->
+                            TextureView(ctx).apply {
+                                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                                    override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
+                                        onBindTexture(texture)
+                                    }
+
+                                    override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) = Unit
+
+                                    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+                                        onBindTexture(null)
+                                        return false
+                                    }
+
+                                    override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+
+            // Status Banner Card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E6EA)),
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val color by animateColorAsState(
+                        targetValue = when (sourceStatus) {
+                            SourceStatus.AKTIF -> Color(0xFF4F8A6B)
+                            SourceStatus.TERPUTUS, SourceStatus.GALAT -> Color(0xFFC0504D)
+                            else -> Color(0xFFC98A2B)
+                        },
+                        label = "color",
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(color, shape = CircleShape),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = statusMessage,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF1F2933),
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick = onToggleDebugOverlay,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("📊 Overlay Debug / FPS", fontSize = 14.sp)
+            }
         }
-        setMeasuredDimension(lebar, tinggiAkhir)
     }
 }

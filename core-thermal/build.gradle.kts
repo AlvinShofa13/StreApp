@@ -10,3 +10,7 @@ android {
         minSdk = 29
     }
 }
+
+dependencies {
+    testImplementation(libs.junit)
+}

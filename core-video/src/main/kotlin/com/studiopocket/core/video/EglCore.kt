@@ -20,6 +20,7 @@ class EglCore {
         private set
     var eglConfig: EGLConfig? = null
         private set
+    private var pbuffer: EGLSurface = EGL14.EGL_NO_SURFACE
 
     init {
         eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
@@ -55,7 +56,17 @@ class EglCore {
         if (eglContext == EGL14.EGL_NO_CONTEXT) {
             throw RuntimeException("Gagal membuat EGLContext ES 3.0")
         }
+        // Konteks harus selalu punya surface current agar tekstur bisa dibuat sebelum preview siap.
+        pbuffer = EGL14.eglCreatePbufferSurface(
+            eglDisplay,
+            eglConfig,
+            intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE),
+            0,
+        )
     }
+
+    fun makeCurrentOffscreen(): Boolean =
+        EGL14.eglMakeCurrent(eglDisplay, pbuffer, pbuffer, eglContext)
 
     /**
      * Membuat EGLSurface untuk [Surface] atau [SurfaceTexture].
@@ -95,6 +106,10 @@ class EglCore {
     fun release() {
         if (eglDisplay != EGL14.EGL_NO_DISPLAY) {
             EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+            if (pbuffer != EGL14.EGL_NO_SURFACE) {
+                EGL14.eglDestroySurface(eglDisplay, pbuffer)
+                pbuffer = EGL14.EGL_NO_SURFACE
+            }
             EGL14.eglDestroyContext(eglDisplay, eglContext)
             EGL14.eglReleaseThread()
             EGL14.eglTerminate(eglDisplay)

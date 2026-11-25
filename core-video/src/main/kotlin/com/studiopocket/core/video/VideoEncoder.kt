@@ -3,6 +3,7 @@ package com.studiopocket.core.video
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
+import android.os.Bundle
 import android.util.Log
 import android.view.Surface
 import java.nio.ByteBuffer
@@ -80,6 +81,29 @@ class VideoEncoder(
                     Log.e(TAG, "Galat saat dequeue buffer video encoder", t)
                 }
             }
+        }
+    }
+
+    fun requestKeyFrame() {
+        val codec = mediaCodec ?: return
+        try {
+            val params = Bundle()
+            params.putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
+            codec.setParameters(params)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Permintaan keyframe gagal: ${t.message}")
+        }
+    }
+
+    fun setBitRate(bps: Int) {
+        if (bps <= 0) return
+        val codec = mediaCodec ?: return
+        try {
+            val params = Bundle()
+            params.putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bps)
+            codec.setParameters(params)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Perubahan bitrate gagal: ${t.message}")
         }
     }
 

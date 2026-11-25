@@ -50,7 +50,8 @@ class AudioEncoder(
         if (!isRunning.get() || bytesRead <= 0) return
 
         try {
-            val inputIndex = codec.dequeueInputBuffer(10_000L)
+            // Tanpa menunggu: callback ini berjalan di thread audio dan tidak boleh tertahan.
+            val inputIndex = codec.dequeueInputBuffer(0L)
             if (inputIndex >= 0) {
                 val inputBuffer: ByteBuffer? = codec.getInputBuffer(inputIndex)
                 if (inputBuffer != null) {
@@ -62,6 +63,31 @@ class AudioEncoder(
         } catch (t: Throwable) {
             if (isRunning.get()) {
                 Log.e(TAG, "Galat saat queueInputBuffer audio", t)
+            }
+        }
+    }
+
+    /** Variasi tanpa salinan perantara: PCM sudah berada di [source] mulai posisi 0. */
+    fun encodeDirect(source: ByteBuffer, bytesRead: Int, ptsUs: Long) {
+        val codec = mediaCodec ?: return
+        if (!isRunning.get() || bytesRead <= 0) return
+
+        try {
+            val inputIndex = codec.dequeueInputBuffer(0L)
+            if (inputIndex >= 0) {
+                val inputBuffer: ByteBuffer? = codec.getInputBuffer(inputIndex)
+                if (inputBuffer != null) {
+                    inputBuffer.clear()
+                    val data = source.duplicate()
+                    data.position(0)
+                    data.limit(bytesRead)
+                    inputBuffer.put(data)
+                    codec.queueInputBuffer(inputIndex, 0, bytesRead, ptsUs, 0)
+                }
+            }
+        } catch (t: Throwable) {
+            if (isRunning.get()) {
+                Log.e(TAG, "Galat saat queueInputBuffer audio langsung", t)
             }
         }
     }

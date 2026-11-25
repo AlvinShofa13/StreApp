@@ -1,0 +1,445 @@
+package com.studiopocket.app.ui.panels
+
+import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import com.studiopocket.app.R
+import com.studiopocket.app.engine.AppEngine
+import com.studiopocket.app.engine.EngineState
+import com.studiopocket.app.engine.RecordingResolution
+import com.studiopocket.app.engine.StorageOption
+import com.studiopocket.app.ui.theme.Aksen
+import com.studiopocket.app.ui.theme.Berhasil
+import com.studiopocket.app.ui.theme.Garis
+import com.studiopocket.app.ui.theme.Kartu
+import com.studiopocket.app.ui.theme.Peringatan
+import com.studiopocket.app.ui.theme.Rekam
+import com.studiopocket.app.ui.theme.Teks
+import com.studiopocket.app.ui.theme.TeksSekunder
+import com.studiopocket.core.thermal.LoadEstimator
+import com.studiopocket.core.thermal.LoadLevel
+import com.studiopocket.model.Presets
+import com.studiopocket.model.SceneTransition
+import com.studiopocket.model.SourceType
+
+/**
+ * Panel Pengaturan OBS Mobile:
+ * Estimasi Beban, Preset Kualitas, Resolusi/FPS, Orientasi Kanvas, Transisi, Penyimpanan, dan Camera Node QR.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SettingsPanel(
+    state: EngineState,
+    engine: AppEngine,
+    modifier: Modifier = Modifier,
+) {
+    val activeSources = state.project.activeScene?.sources.orEmpty().filter { it.visible }
+    val loadEstimate = remember(activeSources, state.recordingResolution) {
+        LoadEstimator.estimasi(
+            jumlahUvc = activeSources.count { it.type == SourceType.UVC },
+            jumlahKamera = activeSources.count { it.type == SourceType.CAMERA },
+            jumlahLayar = activeSources.count { it.type == SourceType.SCREEN },
+            jumlahNode = activeSources.count { it.type == SourceType.REMOTE },
+            jumlahTest = activeSources.count { it.type == SourceType.TEST },
+            lebar = state.recordingResolution.width,
+            fps = state.recordingResolution.fps,
+        )
+    }
+
+    val loadColor = when (loadEstimate.level) {
+        LoadLevel.RINGAN -> Berhasil
+        LoadLevel.SEDANG -> Aksen
+        LoadLevel.BERAT -> Peringatan
+        LoadLevel.MAKSIMUM -> Rekam
+    }
+    val loadLabel = when (loadEstimate.level) {
+        LoadLevel.RINGAN -> stringResource(R.string.load_light)
+        LoadLevel.SEDANG -> stringResource(R.string.load_medium)
+        LoadLevel.BERAT -> stringResource(R.string.load_heavy)
+        LoadLevel.MAKSIMUM -> stringResource(R.string.load_max)
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // 1. Kartu Estimasi Beban (PRD FR-7.3)
+        Surface(
+            color = loadColor.copy(alpha = 0.10f),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, loadColor.copy(alpha = 0.35f)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = loadLabel,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = loadColor,
+                )
+                if (loadEstimate.saranHemat) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.load_warning_hint),
+                        fontSize = 11.sp,
+                        color = Teks,
+                    )
+                }
+            }
+        }
+
+        // 2. Preset Kualitas & Resolusi/FPS & Orientasi Kanvas
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Kartu),
+            border = BorderStroke(1.dp, Garis),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_preset),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Aksen,
+                )
+
+                val presets = listOf(
+                    Presets.HEMAT.id to R.string.preset_hemat,
+                    Presets.SEIMBANG.id to R.string.preset_seimbang,
+                    Presets.TINGGI.id to R.string.preset_tinggi,
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    presets.forEach { (presetId, labelRes) ->
+                        FilterChip(
+                            selected = state.project.activePresetId == presetId,
+                            onClick = { if (!state.recording) engine.setPreset(presetId) },
+                            enabled = !state.recording,
+                            label = { Text(stringResource(labelRes), fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFE7EFF8),
+                                selectedLabelColor = Aksen,
+                            ),
+                        )
+                    }
+                }
+
+                if (state.recording) {
+                    Text(
+                        text = stringResource(R.string.settings_locked_recording),
+                        fontSize = 11.sp,
+                        color = Peringatan,
+                    )
+                }
+
+                Text(
+                    text = stringResource(R.string.settings_resolution),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Aksen,
+                )
+                RecordingResolution.entries.forEach { res ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .selectable(
+                                selected = state.recordingResolution == res,
+                                enabled = !state.recording,
+                                onClick = { engine.setRecordingResolution(res) },
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = state.recordingResolution == res,
+                            enabled = !state.recording,
+                            onClick = { engine.setRecordingResolution(res) },
+                            colors = RadioButtonDefaults.colors(selectedColor = Aksen),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(res.labelRes),
+                            fontSize = 13.sp,
+                            color = if (state.recording) TeksSekunder else Teks,
+                        )
+                    }
+                }
+
+                // Orientasi Kanvas Output (Lanskap 16:9 / Potret 9:16)
+                Text(
+                    text = stringResource(R.string.settings_orientation),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Aksen,
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FilterChip(
+                        selected = !state.canvasPortrait,
+                        enabled = !state.recording,
+                        onClick = { engine.setCanvasPortrait(false) },
+                        label = { Text(stringResource(R.string.canvas_orientation_landscape), fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFE7EFF8),
+                            selectedLabelColor = Aksen,
+                        ),
+                    )
+                    FilterChip(
+                        selected = state.canvasPortrait,
+                        enabled = !state.recording,
+                        onClick = { engine.setCanvasPortrait(true) },
+                        label = { Text(stringResource(R.string.canvas_orientation_portrait), fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFE7EFF8),
+                            selectedLabelColor = Aksen,
+                        ),
+                    )
+                }
+
+                // Transisi Antar Scene (PRD FR-8.3)
+                Text(
+                    text = stringResource(R.string.settings_transition),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Aksen,
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    FilterChip(
+                        selected = state.project.transition == SceneTransition.CUT,
+                        onClick = { engine.setTransition(SceneTransition.CUT, 0) },
+                        label = { Text(stringResource(R.string.transition_cut), fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFE7EFF8),
+                            selectedLabelColor = Aksen,
+                        ),
+                    )
+                    FilterChip(
+                        selected = state.project.transition == SceneTransition.FADE,
+                        onClick = { engine.setTransition(SceneTransition.FADE, 300) },
+                        label = { Text(stringResource(R.string.transition_fade), fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFE7EFF8),
+                            selectedLabelColor = Aksen,
+                        ),
+                    )
+                }
+
+                // Mode Pratinjau Hemat Daya (15 fps)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.settings_preview_power),
+                        fontSize = 13.sp,
+                        color = Teks,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = state.previewLowPower,
+                        onCheckedChange = { engine.setPreviewLowPower(it) },
+                    )
+                }
+            }
+        }
+
+        // 3. Lokasi Penyimpanan Rekaman
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Kartu),
+            border = BorderStroke(1.dp, Garis),
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = stringResource(R.string.settings_storage_location),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Aksen,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                StorageOption.entries.forEach { opt ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .selectable(
+                                selected = state.storageOption == opt,
+                                onClick = { engine.setStorageOption(opt) },
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = state.storageOption == opt,
+                            onClick = { engine.setStorageOption(opt) },
+                            colors = RadioButtonDefaults.colors(selectedColor = Aksen),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(opt.labelRes),
+                            fontSize = 13.sp,
+                            color = Teks,
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Mode Dua Ponsel (Camera Node Pairing QR - PRD 7.6)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Kartu),
+            border = BorderStroke(1.dp, Garis),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.remote_title),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Aksen,
+                )
+
+                val nodesText = if (state.remoteNodes.isEmpty()) {
+                    stringResource(R.string.remote_no_nodes)
+                } else {
+                    stringResource(R.string.remote_connected_nodes, state.remoteNodes.joinToString(", "))
+                }
+                Text(text = nodesText, fontSize = 12.sp, color = TeksSekunder)
+
+                val pairing = state.remotePairing
+                if (pairing == null) {
+                    OutlinedButton(
+                        onClick = { engine.startRemoteHost() },
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Aksen),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                    ) {
+                        Text(stringResource(R.string.remote_start_host), color = Aksen, fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    Text(
+                        text = stringResource(R.string.remote_hint),
+                        fontSize = 11.sp,
+                        color = TeksSekunder,
+                    )
+                    val qrBitmap = remember(pairing) { generateQrBitmap(pairing.toUri(), 420) }
+                    if (qrBitmap != null) {
+                        Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = stringResource(R.string.remote_title),
+                            modifier = Modifier
+                                .size(190.dp)
+                                .align(Alignment.CenterHorizontally),
+                        )
+                    }
+                    Text(
+                        text = "${pairing.host}:${pairing.port} • Token: ${pairing.token}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Teks,
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { engine.rotateRemoteToken() },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Garis),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                        ) {
+                            Text(stringResource(R.string.remote_rotate_token), fontSize = 12.sp, color = Teks)
+                        }
+                        OutlinedButton(
+                            onClick = { engine.stopRemoteHost() },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Rekam),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                        ) {
+                            Text(stringResource(R.string.remote_stop_host), fontSize = 12.sp, color = Rekam)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun generateQrBitmap(content: String, sizePx: Int): Bitmap? {
+    return try {
+        val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, sizePx, sizePx)
+        val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.RGB_565)
+        for (x in 0 until sizePx) {
+            for (y in 0 until sizePx) {
+                bmp.setPixel(x, y, if (matrix.get(x, y)) AndroidColor.BLACK else AndroidColor.WHITE)
+            }
+        }
+        bmp
+    } catch (_: Throwable) {
+        null
+    }
+}

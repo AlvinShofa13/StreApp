@@ -18,7 +18,7 @@ class ProjectTest {
         val p = Project.baru("Utama", sceneId = "a")
         assertEquals(1, p.scenes.size)
         assertEquals("a", p.activeSceneId)
-        assertEquals(1, p.version)
+        assertEquals(2, p.version)
     }
 
     @Test
@@ -41,7 +41,9 @@ class ProjectTest {
 
         assertEquals(listOf("a", "b", "b2", "c"), p.scenes.map { it.id })
         assertEquals("Salinan", p.scenes[2].name)
-        assertEquals(p.scenes[1].sources, p.scenes[2].sources)
+        assertEquals(1, p.scenes[2].sources.size)
+        assertEquals(p.scenes[1].sources[0].deviceKey, p.scenes[2].sources[0].deviceKey)
+        assertTrue(p.scenes[1].sources[0].id != p.scenes[2].sources[0].id)
         assertEquals("a", p.activeSceneId)
     }
 
@@ -133,6 +135,8 @@ class ProjectTest {
         )
         assertEquals(3, Presets.bawaan.map { it.id }.toSet().size)
         assertTrue(Presets.bawaan.all { it.encoder.width <= 1920 && it.encoder.height <= 1080 })
-        assertTrue(Presets.bawaan.all { it.encoder.fps == 30 })
+        assertTrue(Presets.bawaan.all { it.encoder.fps == 30 || it.encoder.fps == 60 })
+        assertEquals(30, Presets.HEMAT.encoder.fps)
+        assertEquals(60, Presets.TINGGI.encoder.fps)
     }
 }

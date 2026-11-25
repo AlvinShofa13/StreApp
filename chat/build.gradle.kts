@@ -14,4 +14,6 @@ android {
 dependencies {
     implementation(project(":core-model"))
     implementation(project(":stream"))
+    implementation(libs.okhttp)
+    testImplementation(libs.junit)
 }

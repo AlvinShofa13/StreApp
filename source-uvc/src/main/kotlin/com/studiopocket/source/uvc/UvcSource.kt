@@ -48,7 +48,9 @@ class UvcSource(context: Context, override val name: String) : Source {
         catat("UVC: mulai")
         UVCUtils.init(appContext)
         val usb = appContext.getSystemService(Context.USB_SERVICE) as UsbManager
-        catat("UVC: perangkat USB ${usb.deviceList.values.joinToString { "${it.vendorId}:${it.productId}" }}")
+        val listDev = usb.deviceList.values
+        catat("UVC: perangkat USB total=${listDev.size} ${listDev.joinToString { "${it.vendorId}:${it.productId}" }}")
+
         val h = CameraHelper()
         helper = h
         catat("UVC: helper dibuat")
@@ -75,7 +77,10 @@ class UvcSource(context: Context, override val name: String) : Source {
                     catat("UVC: camera open ${size ?: "ukuran bawaan"}")
                     if (size != null) h.setPreviewSize(size)
                     h.startPreview()
-                    preview?.let { h.addSurface(it, false) }
+                    preview?.let {
+                        it.setDefaultBufferSize(1280, 720)
+                        h.addSurface(it, false)
+                    }
                     setStatus(SourceStatus.AKTIF)
                 } catch (t: Throwable) {
                     // Jangan biarkan galat pustaka mematikan aplikasi; tampilkan sebagai status.
@@ -111,6 +116,17 @@ class UvcSource(context: Context, override val name: String) : Source {
             }
         })
         catat("UVC: callback terpasang")
+
+        // Jika USB capture card sudah dicolok sebelum start(), jalankan selectDevice langsung
+        if (listDev.isNotEmpty()) {
+            val dev = listDev.first()
+            catat("UVC: mencoba selectDevice langsung untuk ${dev.deviceName}")
+            try {
+                h.selectDevice(dev)
+            } catch (t: Throwable) {
+                catat("UVC: selectDevice langsung gagal: $t")
+            }
+        }
     }
 
     /** Pasang atau lepas SurfaceTexture preview. Aman dipanggil sebelum kamera terbuka. */
@@ -119,6 +135,7 @@ class UvcSource(context: Context, override val name: String) : Source {
         val h = helper
         val lama = preview
         preview = texture
+        texture?.setDefaultBufferSize(1280, 720)
         catat("UVC: surface ${if (texture != null) "dipasang" else "dilepas"}")
         if (h != null && cameraOpen) {
             if (lama != null) h.removeSurface(lama)

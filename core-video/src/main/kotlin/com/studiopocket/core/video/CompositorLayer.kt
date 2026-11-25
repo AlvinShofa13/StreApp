@@ -5,7 +5,10 @@ import android.graphics.SurfaceTexture
 enum class LayerType {
     OES_TEXTURE,
     COLOR_BARS,
+    BITMAP,
 }
+
+enum class LayerShape { RECT, ROUNDED, CIRCLE }
 
 /**
  * Representasi layer input dalam kompositor GL.
@@ -22,6 +25,8 @@ class CompositorLayer(
     var sourceHeight: Int = 720,
     var rotationDegrees: Int = 0,
     var isMirrored: Boolean = false,
+    var shape: LayerShape = LayerShape.RECT,
+    var cornerRadius: Float = 0.12f,
 ) {
     val stMatrix = FloatArray(16)
 

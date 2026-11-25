@@ -10,3 +10,8 @@ build/
 .externalNativeBuild
 .cxx
 buildlog.txt
+dbglog.txt
+infolog.txt
+dist/
+*.jks
+*.keystore

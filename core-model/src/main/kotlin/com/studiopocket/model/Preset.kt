@@ -23,9 +23,11 @@ data class Preset(
 
 object Presets {
     // Angka awal; dikalibrasi ulang dari hasil uji T1.3 di Helio G99.
-    val HEMAT = Preset("hemat", QualityPreset.HEMAT, EncoderSettings(1280, 720, 30, 2_500))
-    val SEIMBANG = Preset("seimbang", QualityPreset.SEIMBANG, EncoderSettings(1280, 720, 30, 4_000))
-    val TINGGI = Preset("tinggi", QualityPreset.TINGGI, EncoderSettings(1920, 1080, 30, 6_000))
+    val HEMAT = Preset("hemat", QualityPreset.HEMAT, EncoderSettings(1280, 720, 30, 3_000))
+    val SEIMBANG = Preset("seimbang", QualityPreset.SEIMBANG, EncoderSettings(1920, 1080, 30, 6_000))
+    val TINGGI = Preset("tinggi", QualityPreset.TINGGI, EncoderSettings(1920, 1080, 60, 12_000))
 
     val bawaan: List<Preset> = listOf(HEMAT, SEIMBANG, TINGGI)
+
+    fun cari(id: String?): Preset = bawaan.firstOrNull { it.id == id } ?: SEIMBANG
 }
