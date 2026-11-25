@@ -1,4 +1,4 @@
-# Daftar Tugas StudioPocket
+# Daftar Tugas StreApp
 
 Urutan disusun dari risiko terbesar. Kerjakan berurutan. Tiap tugas punya kriteria selesai yang bisa diukur. Kolom "Diuji oleh" menunjukkan siapa yang memverifikasi: Agen (build, unit test, log) atau Saya (perangkat fisik, capture card, rasa panas).
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">StudioPocket</string>
+    <string name="app_name">StreApp</string>
     <string name="debug_overlay_toggle">Debug overlay</string>
     <string name="uvc_preview_open">Capture card preview</string>
     <string name="uvc_source_name">UVC</string>
@@ -9,5 +9,14 @@
     <string name="uvc_status_disconnected">Capture card disconnected. Replug the cable.</string>
     <string name="uvc_status_error">Capture card failed to open. Unplug and replug.</string>
     <string name="uvc_status_no_permission">Camera permission is required for the capture card.</string>
+    <string name="compositor_preview_open">3-Source Compositor Preview</string>
+    <string name="compositor_status_initializing">Initializing compositor…</string>
+    <string name="compositor_status_active">Compositor active (3 sources: UVC + Camera + Test Pattern)</string>
+    <string name="camera_source_name">Front Camera</string>
+    <string name="test_pattern_source_name">Test Pattern</string>
+    <string name="recording_start">Start Recording</string>
+    <string name="recording_stop">Stop Recording</string>
+    <string name="recording_active">Recording: %1$s</string>
+    <string name="recording_saved">Saved: %1$s (%2$d KB)</string>
     <string name="diagnostic_title">Diagnostic log</string>
 </resources>

@@ -9,8 +9,14 @@ android {
     defaultConfig {
         minSdk = 29
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
     implementation(project(":core-model"))
+    implementation(project(":core-audio"))
+    testImplementation(libs.junit)
 }

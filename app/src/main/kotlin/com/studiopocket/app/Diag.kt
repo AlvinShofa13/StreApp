@@ -23,6 +23,8 @@ internal object Diag {
         folder = context.filesDir
         catat("--- mulai ---")
         catat("perangkat ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+        val dipasang = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime
+        catat("APK dipasang " + SimpleDateFormat("dd-MM HH:mm:ss", Locale.US).format(Date(dipasang)))
     }
 
     fun catat(langkah: String, error: Throwable? = null) {

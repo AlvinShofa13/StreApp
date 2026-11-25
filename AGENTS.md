@@ -1,4 +1,4 @@
-# StudioPocket
+# StreApp
 
 Aplikasi Android untuk merekam dan menyiarkan gabungan beberapa sumber video dan audio dalam satu scene, seperti OBS versi ringkas di ponsel. Spesifikasi lengkap ada di `docs/PRD.md`. Urutan kerja ada di `docs/TASKS.md`. Baca keduanya sebelum mengerjakan tugas besar.
 

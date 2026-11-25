@@ -31,6 +31,10 @@ class MainActivity : Activity() {
             setText(R.string.uvc_preview_open)
             setOnClickListener { startActivity(Intent(this@MainActivity, UvcPreviewActivity::class.java)) }
         })
+        kolom.addView(Button(this).apply {
+            setText(R.string.compositor_preview_open)
+            setOnClickListener { startActivity(Intent(this@MainActivity, CompositorPreviewActivity::class.java)) }
+        })
         kolom.addView(TextView(this).apply {
             setText(R.string.diagnostic_title)
             setTextColor(0xFF5B6670.toInt())

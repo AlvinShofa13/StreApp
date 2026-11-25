@@ -1,10 +1,10 @@
 # PRD - Aplikasi Mobile Perekam dan Compositor Multi-Sumber
 
-Versi 1.1 | Status: Draft, keputusan produk sudah dimasukkan | Nama kerja produk: StudioPocket (dapat diganti)
+Versi 1.1 | Status: Draft, keputusan produk sudah dimasukkan | Nama produk: StreApp
 
 ## 1. Ringkasan Produk
 
-StudioPocket adalah aplikasi mobile yang membawa konsep inti OBS Studio ke ponsel: menggabungkan beberapa sumber video dan audio dalam satu tampilan (scene), lalu merekamnya menjadi satu file. Aplikasi ini dirancang untuk kreator yang menangkap gameplay dari konsol atau PC melalui capture card, merekam layar ponsel, menambahkan kamera wajah, dan merekam suara mic secara bersamaan, tanpa perlu laptop.
+StreApp adalah aplikasi mobile yang membawa konsep inti OBS Studio ke ponsel: menggabungkan beberapa sumber video dan audio dalam satu tampilan (scene), lalu merekamnya menjadi satu file. Aplikasi ini dirancang untuk kreator yang menangkap gameplay dari konsol atau PC melalui capture card, merekam layar ponsel, menambahkan kamera wajah, dan merekam suara mic secara bersamaan, tanpa perlu laptop.
 
 Fokus produk adalah fitur inti yang benar-benar dipakai, antarmuka yang bersih dan terang, serta konsumsi daya dan panas yang rendah. Fitur OBS yang kompleks (plugin, filter lanjutan, transisi rumit, scripting) sengaja tidak dimasukkan.
 

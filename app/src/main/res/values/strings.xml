@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">StudioPocket</string>
+    <string name="app_name">StreApp</string>
     <string name="debug_overlay_toggle">Overlay debug</string>
     <string name="uvc_preview_open">Preview capture card</string>
     <string name="uvc_source_name">UVC</string>
@@ -9,5 +9,14 @@
     <string name="uvc_status_disconnected">Capture card terputus. Colok ulang kabelnya.</string>
     <string name="uvc_status_error">Capture card gagal dibuka. Lepas lalu colok ulang.</string>
     <string name="uvc_status_no_permission">Izin kamera dibutuhkan untuk capture card.</string>
+    <string name="compositor_preview_open">Preview Kompositor 3 Sumber</string>
+    <string name="compositor_status_initializing">Menginisialisasi kompositor…</string>
+    <string name="compositor_status_active">Kompositor aktif (3 sumber: UVC + Kamera + Pola Uji)</string>
+    <string name="camera_source_name">Kamera Depan</string>
+    <string name="test_pattern_source_name">Pola Uji</string>
+    <string name="recording_start">Mulai Rekam</string>
+    <string name="recording_stop">Hentikan Rekam</string>
+    <string name="recording_active">Merekam: %1$s</string>
+    <string name="recording_saved">Tersimpan: %1$s (%2$d KB)</string>
     <string name="diagnostic_title">Catatan diagnostik</string>
 </resources>

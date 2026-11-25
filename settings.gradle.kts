@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "StudioPocket"
+rootProject.name = "StreApp"
 
 include(":app")
 include(":core-model")
