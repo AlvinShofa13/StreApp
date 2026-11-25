@@ -76,6 +76,9 @@ class AudioEngine(context: Context) {
     private var monitorTrack: AudioTrack? = null
     private var monitorPlaying = false
 
+    @Volatile
+    private var headphonesConnected = false
+
     private val recordBuffer = ShortArray(BLOCK_FRAMES * 2)
     private val monitorBuffer = ShortArray(BLOCK_FRAMES * 2)
     private val scratch = ShortArray(BLOCK_FRAMES * 2)
@@ -94,6 +97,7 @@ class AudioEngine(context: Context) {
     fun start() {
         if (running) return
         running = true
+        headphonesConnected = hasHeadphones()
         audioManager.registerAudioDeviceCallback(deviceCallback, Handler(Looper.getMainLooper()))
         mixThread = Thread({ loopCampur() }, "SP-AudioMix").apply {
             priority = Thread.MAX_PRIORITY
@@ -121,8 +125,13 @@ class AudioEngine(context: Context) {
         }
     }
 
-    /** Tambah input mic dari perangkat tertentu; null = perangkat bawaan sistem. */
-    fun addMic(device: AudioDeviceInfo?, label: String, followDefault: Boolean = false): String? {
+    /** Tambah input mic/USB dari perangkat tertentu; null = perangkat bawaan sistem. */
+    fun addMic(
+        device: AudioDeviceInfo?,
+        label: String,
+        followDefault: Boolean = false,
+        initialMonitor: MonitorMode = MonitorMode.MATI,
+    ): String? {
         if (!hasRecordPermission()) {
             onError?.invoke(label, "Izin mikrofon belum diberikan")
             return null
@@ -145,7 +154,12 @@ class AudioEngine(context: Context) {
                 return null
             }
             val kind = device?.let { AudioDeviceCatalog.kindOf(it.type) } ?: AudioInputKind.MIC
-            val track = mixer.Track(id, frameCapacity = BLOCK_FRAMES * 4)
+            val track = mixer.Track(
+                id = id,
+                frameCapacity = BLOCK_FRAMES * 4,
+                monitorMode = initialMonitor,
+                allowMonitor = kind != AudioInputKind.MIC || headphonesConnected,
+            )
             channels.add(
                 Channel(
                     id = id,
@@ -159,15 +173,15 @@ class AudioEngine(context: Context) {
                 ),
             )
             segarkanSnapshot()
-            Log.i(TAG, "Input $label ($kind) ditambahkan")
+            Log.i(TAG, "Input $label ($kind) ditambahkan (monitor=$initialMonitor)")
             return id
         }
     }
 
-    /** Pilih perangkat mic terbaik dan ikuti perubahan colokan headset/USB. */
+    /** Pilih perangkat mikrofon suara terbaik (bukan capture card USB) dan ikuti colokan headset. */
     fun ensureDefaultMic(label: String): String? {
         defaultMicLabel = label
-        val device = AudioDeviceCatalog.bestMic(AudioDeviceCatalog.inputDevices(audioManager))
+        val device = AudioDeviceCatalog.bestVoiceMic(AudioDeviceCatalog.inputDevices(audioManager))
         synchronized(lock) {
             val existing = channels.firstOrNull { it.followDefault }
             if (existing != null) {
@@ -177,11 +191,27 @@ class AudioEngine(context: Context) {
                 segarkanSnapshot()
             }
         }
-        return addMic(device, label, followDefault = true)
+        return addMic(device, label, followDefault = true, initialMonitor = MonitorMode.MATI)
     }
 
-    fun addInputDevice(device: AudioDeviceInfo, label: String): String? =
-        addMic(device, label, followDefault = false)
+    /**
+     * Tambahkan perangkat audio eksternal / Capture Card USB.
+     * Default [MonitorMode.MONITOR_DAN_REKAM] agar suara capture card langsung terdengar
+     * tanpa umpan balik dari mikrofon ponsel.
+     */
+    fun addInputDevice(
+        device: AudioDeviceInfo,
+        label: String,
+        autoMonitor: Boolean = true,
+    ): String? {
+        val kind = AudioDeviceCatalog.kindOf(device.type)
+        val mode = if (autoMonitor && kind == AudioInputKind.USB) {
+            MonitorMode.MONITOR_DAN_REKAM
+        } else {
+            MonitorMode.MATI
+        }
+        return addMic(device, label, followDefault = false, initialMonitor = mode)
+    }
 
     fun inputDevices(): List<AudioDeviceInfo> = AudioDeviceCatalog.inputDevices(audioManager)
 
@@ -306,14 +336,15 @@ class AudioEngine(context: Context) {
     private fun perangkatBerubah() {
         Thread {
             val headphones = hasHeadphones()
+            headphonesConnected = headphones
             synchronized(lock) {
-                val best = AudioDeviceCatalog.bestMic(AudioDeviceCatalog.inputDevices(audioManager))
+                val best = AudioDeviceCatalog.bestVoiceMic(AudioDeviceCatalog.inputDevices(audioManager))
                 val follow = channels.firstOrNull { it.followDefault }
                 if (follow != null && follow.deviceId != best?.id) {
                     channels.remove(follow)
                     follow.input?.stop()
                     segarkanSnapshot()
-                    addMic(best, defaultMicLabel, followDefault = true)
+                    addMic(best, defaultMicLabel, followDefault = true, initialMonitor = MonitorMode.MATI)
                 }
                 val removedIds = AudioDeviceCatalog.inputDevices(audioManager).map { it.id }.toSet()
                 val hilang = channels.filter {
@@ -342,20 +373,19 @@ class AudioEngine(context: Context) {
         var monitorLastWarning = 0L
         while (running) {
             val arr = channelArray
+            val hp = headphonesConnected
+            var needMonitor = false
             for (c in arr) {
                 val n = c.input?.ring?.read(scratch, BLOCK_FRAMES)
                     ?: c.remote?.ring?.read(scratch, BLOCK_FRAMES)
                     ?: 0
                 if (n > 0) c.track.put(scratch, n) else c.track.putSilence()
+                // Anti-feedback: mikrofon bawaan ponsel tidak boleh dimonitor lewat speaker (bunyi nging).
+                // Sumber eksternal (USB capture card, Node, internal) selalu boleh dimonitor.
+                c.track.allowMonitor = (c.kind != AudioInputKind.MIC) || hp
+                if (c.track.monitors()) needMonitor = true
             }
 
-            var needMonitor = false
-            for (t in trackArray) {
-                if (t.monitors()) {
-                    needMonitor = true
-                    break
-                }
-            }
             mixer.mix(
                 tracks = trackList,
                 frames = BLOCK_FRAMES,
@@ -365,7 +395,11 @@ class AudioEngine(context: Context) {
 
             val now = android.os.SystemClock.elapsedRealtimeNanos()
             onPcm?.invoke(recordBuffer, BLOCK_FRAMES, now)
-            if (needMonitor) tulisMonitor()
+            if (needMonitor) {
+                tulisMonitor()
+            } else if (monitorPlaying) {
+                lepasMonitor()
+            }
 
             next += periodNs
             val sisa = next - android.os.SystemClock.elapsedRealtimeNanos()

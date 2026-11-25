@@ -39,6 +39,8 @@ class AudioMixer(
         var gain: Float = 1f,
         var muted: Boolean = false,
         var monitorMode: MonitorMode = MonitorMode.MATI,
+        /** Dimatikan otomatis untuk mic bawaan saat tanpa headphone guna mencegah feedback (nging). */
+        var allowMonitor: Boolean = true,
     ) {
         val samples = ShortArray(frameCapacity * channelCount)
         var frameCount = 0
@@ -70,7 +72,7 @@ class AudioMixer(
 
         internal fun hasFrames(): Boolean = frameCount > 0
         internal fun records(): Boolean = !muted && monitorMode != MonitorMode.HANYA_MONITOR
-        internal fun monitors(): Boolean = !muted && monitorMode != MonitorMode.MATI
+        internal fun monitors(): Boolean = !muted && allowMonitor && monitorMode != MonitorMode.MATI
     }
 
     private var accumCap = 0

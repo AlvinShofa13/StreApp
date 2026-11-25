@@ -68,6 +68,7 @@ import com.studiopocket.model.SourceType
 fun SettingsPanel(
     state: EngineState,
     engine: AppEngine,
+    appVersion: String = "1.1.1",
     modifier: Modifier = Modifier,
 ) {
     val activeSources = state.project.activeScene?.sources.orEmpty().filter { it.visible }
@@ -426,6 +427,16 @@ fun SettingsPanel(
                 }
             }
         }
+
+        // Info Versi Aplikasi
+        Text(
+            text = stringResource(R.string.settings_app_version, appVersion),
+            fontSize = 11.sp,
+            color = TeksSekunder,
+            modifier = Modifier
+                .align(Alignment.CenterHorizontally)
+                .padding(vertical = 4.dp),
+        )
     }
 }
 

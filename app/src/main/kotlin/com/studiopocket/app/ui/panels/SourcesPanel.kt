@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.PhotoCameraFront
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.ScreenShare
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Tune
@@ -196,6 +197,7 @@ fun SourcesPanel(
                             onToggleVisible = { engine.setVisible(src.id, !src.visible) },
                             onMoveUp = { engine.moveSource(src.id, up = true) },
                             onMoveDown = { engine.moveSource(src.id, up = false) },
+                            onReconnect = { engine.reconnectSource(src.id) },
                             onRemove = {
                                 if (isSelected) engine.selectSource(null)
                                 engine.removeSource(src.id)
@@ -636,6 +638,7 @@ private fun SourceLayerRow(
     onToggleVisible: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    onReconnect: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val icon = when (source.type) {
@@ -693,6 +696,18 @@ private fun SourceLayerRow(
                 )
             }
 
+            if ((source.type == SourceType.UVC || source.type == SourceType.CAMERA) &&
+                status != SourceStatus.AKTIF
+            ) {
+                IconButton(onClick = onReconnect) {
+                    Icon(
+                        imageVector = Icons.Outlined.Refresh,
+                        contentDescription = stringResource(R.string.source_reconnect),
+                        tint = Peringatan,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             IconButton(onClick = onMoveUp, enabled = canMoveUp) {
                 Icon(
                     imageVector = Icons.Outlined.KeyboardArrowUp,

@@ -102,4 +102,25 @@ class AudioMixerTest {
         mixer.mix(listOf(a), frames, ShortArray(samples), null)
         assertEquals(0.5f, a.level, 0.001f)
     }
+
+    @Test
+    fun `anti feedback memblokir monitor mic sambil tetap merekam dan memonitor usb`() {
+        val mixer = AudioMixer()
+        val mic = mixer.Track("mic", 8).apply {
+            put(isi(2000), frames)
+            monitorMode = MonitorMode.MONITOR_DAN_REKAM
+            allowMonitor = false // speaker aktif, cegah bunyi nging
+        }
+        val usb = mixer.Track("usb", 8).apply {
+            put(isi(3000), frames)
+            monitorMode = MonitorMode.MONITOR_DAN_REKAM
+            allowMonitor = true // capture card aman dimonitor
+        }
+        val rec = ShortArray(samples)
+        val mon = ShortArray(samples)
+        val monitored = mixer.mix(listOf(mic, usb), frames, rec, mon)
+        assertTrue(monitored)
+        assertEquals(5000, rec[0].toInt()) // keduanya tetap terekam
+        assertEquals(3000, mon[0].toInt()) // hanya USB yang keluar ke speaker
+    }
 }

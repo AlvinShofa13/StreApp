@@ -128,12 +128,18 @@ class MainActivity : ComponentActivity() {
     private var debugOverlay: DebugOverlay? = null
     private var pendingExportFile: File? = null
 
+    private val startupPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        engine.onPermissionsGranted()
+    }
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissions ->
+        engine.onPermissionsGranted()
         val granted = permissions.entries.all { it.value }
         if (granted) {
-            engine.ensureAudio()
             engine.startRecording()
         } else {
             Toast.makeText(this, getString(R.string.uvc_status_no_permission), Toast.LENGTH_SHORT).show()
@@ -212,6 +218,12 @@ class MainActivity : ComponentActivity() {
             debugStats.noteFrameOut("compositor")
         }
 
+        val appVersion = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "1.1.1"
+        } catch (_: Throwable) {
+            "1.1.1"
+        }
+
         val rootFrameLayout = FrameLayout(this)
         val composeView = ComposeView(this).apply {
             setContent {
@@ -220,6 +232,7 @@ class MainActivity : ComponentActivity() {
                         engine = engine,
                         profileStore = profileStore,
                         chatController = chatController,
+                        appVersion = appVersion,
                         onToggleRecording = { toggleRecording() },
                         onRequestScreenCapture = { requestScreenCapture() },
                         onPickImageOverlay = { imagePickerLauncher.launch(arrayOf("image/*")) },
@@ -250,6 +263,21 @@ class MainActivity : ComponentActivity() {
 
         rootFrameLayout.addView(composeView)
         setContentView(rootFrameLayout)
+
+        // Minta izin CAMERA & RECORD_AUDIO saat awal buka agar capture card USB & audio langsung aktif
+        val missingPerms = buildList {
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                add(Manifest.permission.CAMERA)
+            }
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                add(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+        if (missingPerms.isNotEmpty()) {
+            startupPermissionLauncher.launch(missingPerms.toTypedArray())
+        } else {
+            engine.onPermissionsGranted()
+        }
     }
 
     override fun onPause() {
@@ -260,6 +288,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         chatController.resume()
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        ) {
+            engine.onPermissionsGranted()
+        }
     }
 
     override fun onDestroy() {
@@ -298,6 +331,7 @@ private fun StudioWorkspaceScreen(
     engine: AppEngine,
     profileStore: StreamProfileStore,
     chatController: ChatController,
+    appVersion: String,
     onToggleRecording: () -> Unit,
     onRequestScreenCapture: () -> Unit,
     onPickImageOverlay: () -> Unit,
@@ -363,6 +397,11 @@ private fun StudioWorkspaceScreen(
         topBar = {
             TopAppBar(
                 title = {
+                    val storageText = if (state.storageFreeMb >= 1024L) {
+                        stringResource(R.string.home_storage_free_gb, state.storageFreeMb / 1024.0)
+                    } else {
+                        stringResource(R.string.home_storage_free, state.storageFreeMb)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = stringResource(R.string.app_name),
@@ -370,9 +409,23 @@ private fun StudioWorkspaceScreen(
                             fontWeight = FontWeight.Bold,
                             color = Teks,
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            color = Kartu,
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Garis),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.app_version_badge, appVersion),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TeksSekunder,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                            )
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = stringResource(R.string.home_storage_free, state.storageFreeMb),
+                            text = storageText,
                             fontSize = 11.sp,
                             color = TeksSekunder,
                         )
@@ -540,6 +593,7 @@ private fun StudioWorkspaceScreen(
                                 engine = engine,
                                 profileStore = profileStore,
                                 chatController = chatController,
+                                appVersion = appVersion,
                                 onRequestScreenCapture = onRequestScreenCapture,
                                 onPickImageOverlay = onPickImageOverlay,
                             )
@@ -604,6 +658,7 @@ private fun StudioWorkspaceScreen(
                     engine = engine,
                     profileStore = profileStore,
                     chatController = chatController,
+                    appVersion = appVersion,
                     onRequestScreenCapture = onRequestScreenCapture,
                     onPickImageOverlay = onPickImageOverlay,
                 )
@@ -806,6 +861,7 @@ private fun StudioDockContent(
     engine: AppEngine,
     profileStore: StreamProfileStore,
     chatController: ChatController,
+    appVersion: String,
     onRequestScreenCapture: () -> Unit,
     onPickImageOverlay: () -> Unit,
 ) {
@@ -832,6 +888,7 @@ private fun StudioDockContent(
         StudioTab.SETTINGS -> SettingsPanel(
             state = state,
             engine = engine,
+            appVersion = appVersion,
         )
     }
 }

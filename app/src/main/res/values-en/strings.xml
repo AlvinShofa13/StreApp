@@ -41,6 +41,9 @@
     <string name="home_status_ready">Ready</string>
     <string name="home_status_recording">Recording</string>
     <string name="home_storage_free">%1$d MB free</string>
+    <string name="home_storage_free_gb">%1$.1f GB free</string>
+    <string name="app_version_badge">v%1$s</string>
+    <string name="settings_app_version">App Version: v%1$s</string>
     <string name="home_thermal_normal">Normal</string>
     <string name="home_thermal_warm">Warm</string>
     <string name="home_thermal_critical">Hot</string>
@@ -93,10 +96,14 @@
     <string name="canvas_orientation_portrait">Portrait (9:16)</string>
     <string name="canvas_panel_toggle">Panels</string>
     <string name="canvas_fullscreen_enter">Fullscreen</string>
+    <string name="canvas_fullscreen_short">Full</string>
     <string name="canvas_fullscreen_exit">Exit</string>
     <string name="timer_minimize">Minimize Timer</string>
     <string name="timer_hide">Hide Timer</string>
     <string name="timer_show">Show Timer</string>
+    <string name="source_reconnect">Reconnect</string>
+    <string name="mixer_usb_devices">Detected Audio Devices (USB / Headset)</string>
+    <string name="audio_usb_capture">USB Capture Card Audio</string>
 
     <!-- Scenes & Templates -->
     <string name="scene_add">Add Scene</string>
@@ -159,6 +166,13 @@
     <string name="mixer_monitor_only">Monitor</string>
     <string name="mixer_monitor_and_rec">Monitor &amp; Rec</string>
     <string name="mixer_feedback_warning">No headphones detected. Monitoring via speaker risks audio feedback.</string>
+    <string name="mixer_mic_feedback_protected">Phone mic monitoring is automatically blocked without headphones to prevent feedback howl. External USB capture card audio can still be monitored directly.</string>
+    <string name="mixer_mic_headphone_note">Plug in headphones to monitor the phone mic (prevents feedback). Mic recording remains active.</string>
+    <string name="mixer_kind_usb">External USB</string>
+    <string name="mixer_kind_mic">Microphone</string>
+    <string name="mixer_kind_bluetooth">Bluetooth</string>
+    <string name="mixer_kind_internal">Internal</string>
+    <string name="mixer_kind_remote">Camera Node</string>
     <string name="mixer_headphones_connected">Headphones connected</string>
 
     <!-- Streaming & Chat -->

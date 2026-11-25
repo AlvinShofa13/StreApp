@@ -604,7 +604,7 @@ fun InteractivePreviewCanvas(
                         ) {
                             Row(
                                 modifier = Modifier.padding(
-                                    horizontal = if (isFullscreen) 10.dp else 7.dp,
+                                    horizontal = if (isFullscreen) 10.dp else 8.dp,
                                     vertical = if (isFullscreen) 6.dp else 5.dp,
                                 ),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -617,15 +617,15 @@ fun InteractivePreviewCanvas(
                                     tint = Color.White,
                                     modifier = Modifier.size(15.dp),
                                 )
-                                if (isFullscreen) {
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = stringResource(R.string.canvas_fullscreen_exit),
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = stringResource(
+                                        if (isFullscreen) R.string.canvas_fullscreen_exit else R.string.canvas_fullscreen_short,
+                                    ),
+                                    color = Color.White,
+                                    fontSize = if (isFullscreen) 11.sp else 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                             }
                         }
                     }

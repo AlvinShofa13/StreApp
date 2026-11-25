@@ -14,6 +14,20 @@ object AudioDeviceCatalog {
     fun outputDevices(manager: AudioManager): List<AudioDeviceInfo> =
         manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
 
+    /**
+     * Pilih mikrofon suara (headset kabel -> Bluetooth -> mic bawaan ponsel).
+     * Sengaja tidak mengambil TYPE_USB_DEVICE (capture card) agar audio capture card
+     * berdiri sebagai saluran terpisah dan bisa dimonitor bebas feedback.
+     */
+    fun bestVoiceMic(devices: List<AudioDeviceInfo>): AudioDeviceInfo? {
+        fun cari(vararg types: Int): AudioDeviceInfo? = devices.firstOrNull { it.type in types }
+        return cari(
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BUILTIN_MIC,
+        )
+    }
+
     /** Headset kabel diutamakan, lalu USB (capture card), lalu Bluetooth, terakhir mic ponsel. */
     fun bestMic(devices: List<AudioDeviceInfo>): AudioDeviceInfo? {
         fun cari(vararg types: Int): AudioDeviceInfo? = devices.firstOrNull { it.type in types }

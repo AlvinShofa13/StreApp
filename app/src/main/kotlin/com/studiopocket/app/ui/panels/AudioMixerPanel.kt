@@ -55,6 +55,7 @@ import com.studiopocket.app.ui.theme.Rekam
 import com.studiopocket.app.ui.theme.Teks
 import com.studiopocket.app.ui.theme.TeksSekunder
 import com.studiopocket.core.audio.AudioEngine
+import com.studiopocket.core.audio.AudioInputKind
 import com.studiopocket.core.audio.MonitorMode
 import kotlin.math.roundToInt
 
@@ -62,6 +63,7 @@ import kotlin.math.roundToInt
  * Panel Mixer Audio ala OBS Mobile:
  * Fader volume, mute, level meter real-time, 3 mode monitoring, dan peringatan umpan balik.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AudioMixerPanel(
     state: EngineState,
@@ -69,14 +71,16 @@ fun AudioMixerPanel(
     modifier: Modifier = Modifier,
 ) {
     val channels = state.audioChannels
-    val anyMonitoring = channels.any { it.monitor != MonitorMode.MATI }
+    val micMonitoringBlocked = !state.headphones && channels.any {
+        it.kind == AudioInputKind.MIC && it.monitor != MonitorMode.MATI
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // Peringatan umpan balik speaker (PRD FR-4.3)
-        if (anyMonitoring && !state.headphones) {
+        // Info proteksi anti-feedback untuk mikrofon ponsel (capture card USB tetap aman didengar)
+        if (micMonitoringBlocked) {
             Surface(
                 color = Peringatan.copy(alpha = 0.14f),
                 shape = RoundedCornerShape(12.dp),
@@ -95,7 +99,7 @@ fun AudioMixerPanel(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = stringResource(R.string.mixer_feedback_warning),
+                        text = stringResource(R.string.mixer_mic_feedback_protected),
                         fontSize = 12.sp,
                         color = Teks,
                     )
@@ -198,6 +202,7 @@ fun AudioMixerPanel(
                         AudioChannelControl(
                             channel = ch,
                             level = state.levels[ch.id] ?: 0f,
+                            hasHeadphones = state.headphones,
                             canRemove = channels.size > 1,
                             onGainChange = { engine.setGain(ch.id, it) },
                             onToggleMute = { engine.setMuted(ch.id, !ch.muted) },
@@ -206,6 +211,44 @@ fun AudioMixerPanel(
                         )
                         if (idx < channels.lastIndex) {
                             HorizontalDivider(color = Garis, thickness = 1.dp)
+                        }
+                    }
+                }
+
+                val usbAndExtraInputs = engine.availableAudioInputDevices().filter { dev ->
+                    channels.none { it.deviceId == dev.id } &&
+                        (dev.type == android.media.AudioDeviceInfo.TYPE_USB_DEVICE ||
+                            dev.type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET ||
+                            dev.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                            dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+                }
+                if (usbAndExtraInputs.isNotEmpty()) {
+                    HorizontalDivider(color = Garis, thickness = 1.dp)
+                    Text(
+                        text = stringResource(R.string.mixer_usb_devices),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Aksen,
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        usbAndExtraInputs.forEach { dev ->
+                            val devName = dev.productName?.toString()?.takeIf { it.isNotBlank() }
+                                ?: stringResource(R.string.audio_usb_capture)
+                            OutlinedButton(
+                                onClick = { engine.addUsbAudio(dev) },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Aksen),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier.heightIn(min = 48.dp),
+                            ) {
+                                Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(14.dp), tint = Aksen)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(devName, fontSize = 11.sp, color = Aksen)
+                            }
                         }
                     }
                 }
@@ -219,12 +262,21 @@ fun AudioMixerPanel(
 private fun AudioChannelControl(
     channel: AudioEngine.ChannelInfo,
     level: Float,
+    hasHeadphones: Boolean,
     canRemove: Boolean,
     onGainChange: (Float) -> Unit,
     onToggleMute: () -> Unit,
     onMonitorChange: (MonitorMode) -> Unit,
     onRemove: () -> Unit,
 ) {
+    val micNeedsHeadphones = channel.kind == AudioInputKind.MIC && !hasHeadphones
+    val kindBadge = when (channel.kind) {
+        AudioInputKind.USB -> stringResource(R.string.mixer_kind_usb)
+        AudioInputKind.MIC -> stringResource(R.string.mixer_kind_mic)
+        AudioInputKind.BLUETOOTH -> stringResource(R.string.mixer_kind_bluetooth)
+        AudioInputKind.INTERNAL -> stringResource(R.string.mixer_kind_internal)
+        AudioInputKind.REMOTE -> stringResource(R.string.mixer_kind_remote)
+    }
     val meterColor = when {
         channel.muted -> Garis
         level > 0.85f -> Rekam
@@ -258,7 +310,7 @@ private fun AudioChannelControl(
                     color = if (channel.muted) TeksSekunder else Teks,
                 )
                 Text(
-                    text = "${(channel.gain * 100).roundToInt()}%",
+                    text = "$kindBadge • ${(channel.gain * 100).roundToInt()}%",
                     fontSize = 11.sp,
                     color = TeksSekunder,
                 )
@@ -307,8 +359,10 @@ private fun AudioChannelControl(
                 MonitorMode.MONITOR_DAN_REKAM to R.string.mixer_monitor_and_rec,
             )
             modes.forEach { (mode, labelRes) ->
+                val enabled = mode == MonitorMode.MATI || !micNeedsHeadphones
                 FilterChip(
-                    selected = channel.monitor == mode,
+                    selected = channel.monitor == mode && enabled,
+                    enabled = enabled,
                     onClick = { onMonitorChange(mode) },
                     label = { Text(stringResource(labelRes), fontSize = 11.sp) },
                     colors = FilterChipDefaults.filterChipColors(
@@ -317,6 +371,13 @@ private fun AudioChannelControl(
                     ),
                 )
             }
+        }
+        if (micNeedsHeadphones) {
+            Text(
+                text = stringResource(R.string.mixer_mic_headphone_note),
+                fontSize = 11.sp,
+                color = TeksSekunder,
+            )
         }
     }
 }

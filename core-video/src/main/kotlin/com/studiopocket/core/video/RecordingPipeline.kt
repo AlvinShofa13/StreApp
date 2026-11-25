@@ -46,6 +46,7 @@ class RecordingPipeline(
         private set
 
     private var startTimeMs = 0L
+    private var startTimeNs = 0L
     private val audioBytes = ByteBuffer.allocateDirect(AudioEngineBridge.MAX_PCM_BYTES)
         .order(ByteOrder.nativeOrder())
 
@@ -77,6 +78,7 @@ class RecordingPipeline(
         videoEncoder = ve
 
         val startNs = SystemClock.elapsedRealtimeNanos()
+        startTimeNs = startNs
         compositor.setEncoderSurface(ve.inputSurface, startNs)
 
         val ae = AudioEncoder(
@@ -111,11 +113,13 @@ class RecordingPipeline(
     /** PCM stereo 48 kHz dari AudioEngine. Dipanggil di thread audio; tanpa alokasi. */
     fun feedAudio(pcm: ShortArray, frames: Int, timeNs: Long) {
         val encoder = audioEncoder ?: return
+        if (!isRecording) return
         val samples = frames * 2
         if (samples <= 0 || samples > pcm.size) return
         audioBytes.clear()
         audioBytes.asShortBuffer().put(pcm, 0, samples)
-        encoder.encodeDirect(audioBytes, samples * 2, timeNs / 1000)
+        val ptsUs = ((timeNs - startTimeNs) / 1000L).coerceAtLeast(0L)
+        encoder.encodeDirect(audioBytes, samples * 2, ptsUs)
     }
 
     fun requestKeyFrame() {

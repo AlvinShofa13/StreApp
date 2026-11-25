@@ -38,69 +38,66 @@ class AudioInput(
     @SuppressLint("MissingPermission")
     fun start(): Boolean {
         if (running.get()) return true
-        val stereoMin = AudioRecord.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_IN_STEREO,
-            AudioFormat.ENCODING_PCM_16BIT,
+        // Coba stereo terlebih dahulu; beberapa capture card USB hanya mendukung mono
+        val candidates = listOf(
+            2 to AudioFormat.CHANNEL_IN_STEREO,
+            1 to AudioFormat.CHANNEL_IN_MONO,
         )
-        val inChannels = if (stereoMin > 0) 2 else 1
-        val channelMask = if (inChannels == 2) {
-            AudioFormat.CHANNEL_IN_STEREO
-        } else {
-            AudioFormat.CHANNEL_IN_MONO
-        }
-        val minBuffer = if (stereoMin > 0) {
-            stereoMin
-        } else {
-            AudioRecord.getMinBufferSize(sampleRate, channelMask, AudioFormat.ENCODING_PCM_16BIT)
-        }
-        if (minBuffer <= 0) {
-            lastError = "Ukuran buffer audio tidak didukung"
-            return false
-        }
+        var rec: AudioRecord? = null
+        var inChannels = 2
 
-        val rec = try {
-            val format = AudioFormat.Builder()
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .setSampleRate(sampleRate)
-                .setChannelMask(channelMask)
-                .build()
-            val builder = AudioRecord.Builder()
-                .setAudioFormat(format)
-                .setBufferSizeInBytes(minBuffer * 2)
-            if (playbackConfig != null) {
-                builder.setAudioPlaybackCaptureConfig(playbackConfig)
+        for ((channels, channelMask) in candidates) {
+            val minBuffer = AudioRecord.getMinBufferSize(sampleRate, channelMask, AudioFormat.ENCODING_PCM_16BIT)
+            if (minBuffer <= 0) continue
+            val built = try {
+                val format = AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(channelMask)
+                    .build()
+                val builder = AudioRecord.Builder()
+                    .setAudioFormat(format)
+                    .setBufferSizeInBytes(minBuffer * 2)
+                if (playbackConfig != null) {
+                    builder.setAudioPlaybackCaptureConfig(playbackConfig)
+                } else {
+                    builder.setAudioSource(audioSource)
+                }
+                val r = builder.build()
+                if (device != null && !r.setPreferredDevice(device)) {
+                    Log.w(TAG, "Perangkat audio pilihan tidak dapat dipakai, memakai bawaan")
+                }
+                r
+            } catch (t: Throwable) {
+                lastError = t.message ?: t.javaClass.simpleName
+                Log.w(TAG, "Gagal membuat AudioRecord ($channels ch): ${t.message}")
+                null
+            }
+            if (built != null && built.state == AudioRecord.STATE_INITIALIZED) {
+                try {
+                    built.startRecording()
+                    rec = built
+                    inChannels = channels
+                    break
+                } catch (t: Throwable) {
+                    lastError = t.message ?: t.javaClass.simpleName
+                    built.release()
+                    Log.w(TAG, "Gagal startRecording ($channels ch): ${t.message}")
+                }
             } else {
-                builder.setAudioSource(audioSource)
+                built?.release()
             }
-            val r = builder.build()
-            if (device != null && !r.setPreferredDevice(device)) {
-                Log.w(TAG, "Perangkat audio pilihan tidak dapat dipakai, memakai bawaan")
-            }
-            r
-        } catch (t: Throwable) {
-            lastError = t.message ?: t.javaClass.simpleName
-            Log.e(TAG, "Gagal membuat AudioRecord", t)
+        }
+
+        val activeRecord = rec
+        if (activeRecord == null) {
+            if (lastError == null) lastError = "AudioRecord tidak siap"
+            Log.e(TAG, "Gagal membuka input audio $id: $lastError")
             return false
         }
 
-        if (rec.state != AudioRecord.STATE_INITIALIZED) {
-            rec.release()
-            lastError = "AudioRecord tidak siap"
-            return false
-        }
-
-        try {
-            rec.startRecording()
-        } catch (t: Throwable) {
-            lastError = t.message ?: t.javaClass.simpleName
-            rec.release()
-            Log.e(TAG, "Gagal mulai merekam audio", t)
-            return false
-        }
-
-        record = rec
-        routedDeviceName = rec.routedDevice?.productName?.toString()
+        record = activeRecord
+        routedDeviceName = activeRecord.routedDevice?.productName?.toString()
         running.set(true)
         val chunkFrames = 1024
         val readBuffer = ShortArray(chunkFrames * inChannels)
@@ -109,7 +106,7 @@ class AudioInput(
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             while (running.get()) {
                 val read = try {
-                    rec.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
+                    activeRecord.read(readBuffer, 0, readBuffer.size, AudioRecord.READ_BLOCKING)
                 } catch (t: Throwable) {
                     if (running.get()) lastError = t.message ?: "read gagal"
                     break

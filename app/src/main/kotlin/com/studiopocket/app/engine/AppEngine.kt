@@ -536,25 +536,89 @@ class AppEngine(val context: Context) {
     fun cameraSource(id: String): CameraSource? =
         synchronized(runtimeLock) { runtimes[id]?.source as? CameraSource }
 
+    /** Dipanggil setelah izin CAMERA / RECORD_AUDIO disetujui agar UVC, kamera, dan audio langsung aktif. */
+    fun onPermissionsGranted() {
+        ensureStarted()
+        ensureAudio()
+        val scene = mutableState.value.project.activeScene ?: return
+        synchronized(runtimeLock) {
+            for (s in scene.sources) {
+                if (!s.visible) continue
+                val src = runtimes[s.id]?.source ?: continue
+                if (src.status != SourceStatus.AKTIF) {
+                    when (src) {
+                        is UvcSource -> src.reconnect()
+                        else -> src.start()
+                    }
+                }
+            }
+        }
+        segarkanAudio()
+    }
+
+    /** Coba sambung ulang sumber tertentu (misal UVC atau kamera yang galat/terputus). */
+    fun reconnectSource(id: String) {
+        val src = synchronized(runtimeLock) { runtimes[id]?.source } ?: return
+        when (src) {
+            is UvcSource -> src.reconnect()
+            else -> {
+                src.stop()
+                src.start()
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- audio
 
     fun ensureAudio() {
-        if (audioEngine != null) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return
-        val engine = AudioEngine(context)
-        engine.onPcm = { pcm, frames, ns ->
-            pipeline?.feedAudio(pcm, frames, ns)
+        if (audioEngine == null) {
+            val engine = AudioEngine(context)
+            engine.onPcm = { pcm, frames, ns ->
+                pipeline?.feedAudio(pcm, frames, ns)
+            }
+            engine.onError = { _, pesan -> Log.w(TAG, "Audio: $pesan") }
+            engine.onDeviceChanged = {
+                scope.launch {
+                    autoAttachUsbAudio(engine)
+                    mutableState.update { s ->
+                        s.copy(
+                            headphones = engine.hasHeadphones(),
+                            audioChannels = engine.channels(),
+                        )
+                    }
+                }
+            }
+            engine.start()
+            engine.ensureDefaultMic(context.getString(R.string.audio_mic))
+            autoAttachUsbAudio(engine)
+            audioEngine = engine
+            mutableState.update { it.copy(headphones = engine.hasHeadphones()) }
+        } else {
+            audioEngine?.let { autoAttachUsbAudio(it) }
         }
-        engine.onError = { _, pesan -> Log.w(TAG, "Audio: $pesan") }
-        engine.onDeviceChanged = {
-            scope.launch { mutableState.update { s -> s.copy(headphones = engine.hasHeadphones()) } }
-        }
-        engine.start()
-        engine.ensureDefaultMic(context.getString(R.string.audio_mic))
-        audioEngine = engine
-        mutableState.update { it.copy(headphones = engine.hasHeadphones()) }
         segarkanAudio()
     }
+
+    /** Tambahkan audio USB capture card otomatis bila terdeteksi dan belum menjadi saluran aktif. */
+    private fun autoAttachUsbAudio(engine: AudioEngine) {
+        val usbInputs = engine.inputDevices().filter {
+            it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+        }
+        val activeIds = engine.channels().mapNotNull { it.deviceId }.toSet()
+        for (dev in usbInputs) {
+            if (dev.id !in activeIds) {
+                val label = dev.productName?.toString()?.takeIf { it.isNotBlank() }
+                    ?: context.getString(R.string.audio_usb_capture)
+                engine.addInputDevice(dev, label)
+            }
+        }
+    }
+
+    fun availableAudioInputDevices(): List<AudioDeviceInfo> =
+        audioEngine?.inputDevices().orEmpty()
 
     fun audioEngine(): AudioEngine? = audioEngine
 
