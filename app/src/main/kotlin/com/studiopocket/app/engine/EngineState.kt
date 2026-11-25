@@ -9,6 +9,7 @@ import com.studiopocket.core.thermal.ThermalLevel
 import com.studiopocket.model.Project
 import com.studiopocket.model.ProjectJson
 import com.studiopocket.model.SourceStatus
+import com.studiopocket.source.remote.NetworkEndpoint
 import com.studiopocket.source.remote.PairingInfo
 import com.studiopocket.stream.RtmpPublisher
 import java.io.File
@@ -69,8 +70,10 @@ data class EngineState(
     val headphones: Boolean = false,
     val hasScreen: Boolean = false,
     val remotePairing: PairingInfo? = null,
+    val remoteEndpoints: List<NetworkEndpoint> = emptyList(),
     val remoteNodes: List<String> = emptyList(),
     val errorRes: Int? = null,
+    val errorDetail: String? = null,
     val lastFile: File? = null,
     val reviewFile: File? = null,
     val storageOption: StorageOption = StorageOption.MOVIES,

@@ -226,7 +226,10 @@
     <string name="remote_rotate_token">Perbarui Token</string>
     <string name="remote_connected_nodes">Tersambung: %1$s</string>
     <string name="remote_no_nodes">Belum ada Camera Node tersambung.</string>
-    <string name="remote_hint">Pastikan HP kedua berada di Wi-Fi atau hotspot yang sama, lalu pindai kode QR ini.</string>
+    <string name="remote_hint">Pastikan HP kedua berada di Wi-Fi, hotspot, atau kabel USB Tethering yang sama, lalu pindai kode QR ini.</string>
+    <string name="remote_usb_cable_hint">Opsi Kabel USB: Hubungkan kedua HP lewat kabel USB/OTG lalu aktifkan Penambatan USB (USB Tethering) di salah satu HP untuk koneksi tanpa Wi-Fi berlatensi rendah.</string>
+    <string name="remote_link_usb">Kabel USB</string>
+    <string name="remote_link_wifi">Wi-Fi / Hotspot</string>
 
     <!-- Settings Options -->
     <string name="settings_preset">Preset Kualitas</string>

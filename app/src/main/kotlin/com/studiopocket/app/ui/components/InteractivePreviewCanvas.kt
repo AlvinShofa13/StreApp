@@ -58,6 +58,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -457,38 +458,39 @@ fun InteractivePreviewCanvas(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Pojok kiri atas: Timer Rekaman Kecil (bisa dikecilkan jadi titik / disembunyikan total)
-                if (recording) {
-                    CompactRecordingTimer(
-                        recordingMs = recordingMs,
-                        mode = timerMode,
-                        onModeChange = { timerMode = it },
-                    )
-                } else if (!isFullscreen) {
-                    val selected = sources.firstOrNull { it.id == selectedSourceId && it.visible }
-                    if (selected != null && !canvasLocked) {
-                        ComposeSurface(
-                            color = Color.Black.copy(alpha = 0.62f),
-                            shape = RoundedCornerShape(8.dp),
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    R.string.canvas_selected_size,
-                                    selected.name,
-                                    (selected.transform.width * 100).roundToInt(),
-                                    (selected.transform.height * 100).roundToInt(),
-                                ),
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            )
+                // Pojok kiri atas: Timer Rekaman Kecil (atau nama sumber terpilih yang dibatasi weight agar tidak mendorong tombol kanan)
+                Box(modifier = Modifier.weight(1f)) {
+                    if (recording) {
+                        CompactRecordingTimer(
+                            recordingMs = recordingMs,
+                            mode = timerMode,
+                            onModeChange = { timerMode = it },
+                        )
+                    } else if (!isFullscreen) {
+                        val selected = sources.firstOrNull { it.id == selectedSourceId && it.visible }
+                        if (selected != null && !canvasLocked) {
+                            ComposeSurface(
+                                color = Color.Black.copy(alpha = 0.62f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.padding(end = 6.dp),
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.canvas_selected_size,
+                                        selected.name,
+                                        (selected.transform.width * 100).roundToInt(),
+                                        (selected.transform.height * 100).roundToInt(),
+                                    ),
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                )
+                            }
                         }
-                    } else {
-                        Spacer(modifier = Modifier.width(1.dp))
                     }
-                } else {
-                    Spacer(modifier = Modifier.width(1.dp))
                 }
 
                 // Pojok kanan atas: Kontrol cepat & tombol Layar Penuh
@@ -541,6 +543,8 @@ fun InteractivePreviewCanvas(
                                         color = Color.White,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        softWrap = false,
                                     )
                                 }
                             }
@@ -625,6 +629,8 @@ fun InteractivePreviewCanvas(
                                     color = Color.White,
                                     fontSize = if (isFullscreen) 11.sp else 10.sp,
                                     fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
                                 )
                             }
                         }

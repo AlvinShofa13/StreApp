@@ -58,6 +58,7 @@ import com.studiopocket.core.thermal.LoadLevel
 import com.studiopocket.model.Presets
 import com.studiopocket.model.SceneTransition
 import com.studiopocket.model.SourceType
+import com.studiopocket.source.remote.NetworkLinkKind
 
 /**
  * Panel Pengaturan OBS Mobile:
@@ -364,6 +365,11 @@ fun SettingsPanel(
                     stringResource(R.string.remote_connected_nodes, state.remoteNodes.joinToString(", "))
                 }
                 Text(text = nodesText, fontSize = 12.sp, color = TeksSekunder)
+                Text(
+                    text = stringResource(R.string.remote_usb_cable_hint),
+                    fontSize = 11.sp,
+                    color = TeksSekunder,
+                )
 
                 val pairing = state.remotePairing
                 if (pairing == null) {
@@ -408,6 +414,31 @@ fun SettingsPanel(
                         fontSize = 11.sp,
                         color = TeksSekunder,
                     )
+                    // Pemilih jalur jaringan (Kabel USB Tethering vs Wi-Fi/Hotspot)
+                    if (state.remoteEndpoints.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            state.remoteEndpoints.forEach { ep ->
+                                val kindText = when (ep.kind) {
+                                    NetworkLinkKind.USB_CABLE -> stringResource(R.string.remote_link_usb)
+                                    NetworkLinkKind.WIFI_HOTSPOT -> stringResource(R.string.remote_link_wifi)
+                                    NetworkLinkKind.OTHER -> ep.interfaceName
+                                }
+                                FilterChip(
+                                    selected = pairing.host == ep.ip,
+                                    onClick = { engine.selectRemoteHostIp(ep.ip) },
+                                    label = { Text("$kindText (${ep.ip})", fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(0xFFE7EFF8),
+                                        selectedLabelColor = Aksen,
+                                    ),
+                                )
+                            }
+                        }
+                    }
                     val qrBitmap = remember(pairing) { generateQrBitmap(pairing.toUri(), 420) }
                     if (qrBitmap != null) {
                         Image(

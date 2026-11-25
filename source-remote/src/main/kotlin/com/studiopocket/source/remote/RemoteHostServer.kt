@@ -1,39 +1,132 @@
 package com.studiopocket.source.remote
 
+import android.content.Context
+import android.net.ConnectivityManager
 import android.util.Log
 import org.json.JSONObject
 import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
 import java.security.SecureRandom
 
-/** Mencari alamat IPv4 lokal untuk QR pairing (Wi-Fi biasa maupun hotspot). */
+enum class NetworkLinkKind { USB_CABLE, WIFI_HOTSPOT, OTHER }
+
+data class NetworkEndpoint(
+    val ip: String,
+    val interfaceName: String,
+    val kind: NetworkLinkKind,
+)
+
+/**
+ * Mencari alamat IPv4 lokal untuk QR pairing — mendukung Kabel USB (USB Tethering / RNDIS),
+ * Hotspot, dan Wi-Fi, sambil menghindari alamat seluler (rmnet/ccmni) yang tidak bisa dijangkau LAN.
+ */
 object NetworkAddress {
-    fun localIpv4(): String? {
-        return try {
-            NetworkInterface.getNetworkInterfaces().toList()
-                .filter { it.isUp && !it.isLoopback }
-                .flatMap { it.inetAddresses.toList() }
-                .filterIsInstance<Inet4Address>()
-                .firstOrNull { it.isSiteLocalAddress }
-                ?.hostAddress
-        } catch (_: Throwable) {
-            null
+
+    fun allLocalEndpoints(context: Context? = null): List<NetworkEndpoint> {
+        val found = LinkedHashMap<String, NetworkEndpoint>()
+
+        // 1. Pindai semua NetworkInterface (mendukung Wi-Fi, Hotspot ap0/swlan0, dan Kabel USB rndis0/usb0/ncm0)
+        try {
+            val ifaces = NetworkInterface.getNetworkInterfaces()
+            if (ifaces != null) {
+                for (ni in ifaces.toList()) {
+                    if (!ni.isUp || ni.isLoopback) continue
+                    val name = ni.name.orEmpty().lowercase()
+                    if (isCellularInterface(name)) continue
+                    val kind = classifyInterface(name)
+                    for (addr in ni.inetAddresses.toList()) {
+                        if (addr is Inet4Address && !addr.isLoopbackAddress && !addr.isLinkLocalAddress) {
+                            val ip = addr.hostAddress ?: continue
+                            if (ip != "0.0.0.0" && !found.containsKey(ip)) {
+                                found[ip] = NetworkEndpoint(ip, ni.name.orEmpty(), kind)
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w("SP-NetAddr", "Gagal membaca NetworkInterface: ${t.message}")
         }
+
+        // 2. Cadangan lewat ConnectivityManager (beberapa perangkat Android 11+ membatasi getNetworkInterfaces)
+        if (context != null) {
+            try {
+                val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                val active = cm?.activeNetwork
+                val props = if (active != null) cm.getLinkProperties(active) else null
+                val ifaceName = props?.interfaceName.orEmpty()
+                if (props != null && !isCellularInterface(ifaceName.lowercase())) {
+                    val kind = classifyInterface(ifaceName.lowercase())
+                    for (linkAddr in props.linkAddresses) {
+                        val addr = linkAddr.address
+                        if (addr is Inet4Address && !addr.isLoopbackAddress && !addr.isLinkLocalAddress) {
+                            val ip = addr.hostAddress ?: continue
+                            if (ip != "0.0.0.0" && !found.containsKey(ip)) {
+                                found[ip] = NetworkEndpoint(ip, ifaceName.ifBlank { "net" }, kind)
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w("SP-NetAddr", "Gagal membaca ConnectivityManager: ${t.message}")
+            }
+        }
+
+        // Urutkan prioritas: Kabel USB (paling stabil & latensi terendah) -> Wi-Fi/Hotspot -> lainnya
+        return found.values.sortedBy {
+            when (it.kind) {
+                NetworkLinkKind.USB_CABLE -> 0
+                NetworkLinkKind.WIFI_HOTSPOT -> 1
+                NetworkLinkKind.OTHER -> 2
+            }
+        }
+    }
+
+    fun localIpv4(context: Context? = null): String? =
+        allLocalEndpoints(context).firstOrNull()?.ip
+
+    private fun isCellularInterface(lowerName: String): Boolean =
+        lowerName.startsWith("rmnet") ||
+            lowerName.startsWith("ccmni") ||
+            lowerName.startsWith("pdp") ||
+            lowerName.startsWith("wwan") ||
+            lowerName.startsWith("tun")
+
+    private fun classifyInterface(lowerName: String): NetworkLinkKind = when {
+        lowerName.startsWith("rndis") ||
+            lowerName.startsWith("usb") ||
+            lowerName.startsWith("ncm") ||
+            lowerName.startsWith("eth") -> NetworkLinkKind.USB_CABLE
+
+        lowerName.startsWith("wlan") ||
+            lowerName.startsWith("ap") ||
+            lowerName.startsWith("swlan") ||
+            lowerName.startsWith("softap") ||
+            lowerName.startsWith("p2p") -> NetworkLinkKind.WIFI_HOTSPOT
+
+        else -> NetworkLinkKind.OTHER
     }
 }
 
 /**
  * Server pairing di Host. Menampilkan token di QR; setiap token hanya untuk satu sesi
- * pairing. Node yang tidak membawa token benar gagal didekripsi dan langsung ditutup.
+ * pairing. Mendukung Wi-Fi, Hotspot, dan Kabel USB (USB Tethering / RNDIS).
  */
 class RemoteHostServer(
     private val hostName: String,
     private val preferredPort: Int = 45678,
+    private val appContext: Context? = null,
 ) {
     @Volatile
     var pairing: PairingInfo = buatPairing()
+        private set
+
+    @Volatile
+    var availableEndpoints: List<NetworkEndpoint> = emptyList()
         private set
 
     /** Dibuat oleh lapisan aplikasi agar koneksi memakai SurfaceTexture kompositor yang sama. */
@@ -51,40 +144,85 @@ class RemoteHostServer(
 
     fun start(): PairingInfo {
         if (running) return pairing
-        val socket = try {
-            ServerSocket(preferredPort)
-        } catch (_: Throwable) {
-            try {
-                ServerSocket(0)
-            } catch (t: Throwable) {
-                Log.e(TAG, "Gagal membuka ServerSocket: ${t.message}", t)
-                throw t
-            }
-        }
+        val endpoints = NetworkAddress.allLocalEndpoints(appContext)
+        availableEndpoints = endpoints
+        val preferredIp = endpoints.firstOrNull()?.ip
+
+        val socket = bukaServerSocket(preferredIp)
         running = true
         server = socket
-        pairing = buatPairing(socket.localPort)
+        pairing = buatPairing(port = socket.localPort, forcedHost = preferredIp)
         thread = Thread({ terimaLoop(socket) }, "SP-RemoteHost").apply {
             isDaemon = true
             start()
         }
-        Log.i(TAG, "Server Node di port ${socket.localPort}")
+        Log.i(TAG, "Server Node di ${pairing.host}:${socket.localPort} (kandidat=${endpoints.size})")
         return pairing
     }
 
-    /** Token baru untuk pasangan Node berikutnya. */
+    private fun bukaServerSocket(preferredIp: String?): ServerSocket {
+        val attempts = listOf<() -> ServerSocket>(
+            {
+                ServerSocket().apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress(preferredPort))
+                }
+            },
+            {
+                ServerSocket().apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress(0))
+                }
+            },
+            {
+                val bindAddr = if (!preferredIp.isNullOrBlank() && preferredIp != "0.0.0.0") {
+                    InetAddress.getByName(preferredIp)
+                } else {
+                    InetAddress.getLoopbackAddress()
+                }
+                ServerSocket().apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress(bindAddr, 0))
+                }
+            },
+        )
+        var lastError: Throwable? = null
+        for (attempt in attempts) {
+            try {
+                return attempt()
+            } catch (t: Throwable) {
+                lastError = t
+                Log.w(TAG, "Percobaan bind ServerSocket gagal: ${t.javaClass.simpleName}: ${t.message}")
+            }
+        }
+        throw lastError ?: IllegalStateException("Tidak dapat membuka ServerSocket")
+    }
+
+    /** Segarkan daftar antarmuka jaringan (Wi-Fi / Hotspot / Kabel USB) dan perbarui token. */
     fun rotateToken(): PairingInfo {
-        pairing = buatPairing(server?.localPort ?: preferredPort)
+        val endpoints = NetworkAddress.allLocalEndpoints(appContext)
+        availableEndpoints = endpoints
+        val currentHost = pairing.host.takeIf { h -> endpoints.any { it.ip == h } }
+            ?: endpoints.firstOrNull()?.ip
+        pairing = buatPairing(port = server?.localPort ?: preferredPort, forcedHost = currentHost)
         return pairing
     }
 
-    private fun buatPairing(port: Int = preferredPort): PairingInfo {
+    /** Ganti IP yang dipakai di QR (misalnya beralih antara Kabel USB dan Wi-Fi/Hotspot). */
+    fun selectHostIp(ip: String): PairingInfo {
+        if (ip.isBlank()) return pairing
+        pairing = pairing.copy(host = ip)
+        return pairing
+    }
+
+    private fun buatPairing(port: Int = preferredPort, forcedHost: String? = null): PairingInfo {
         val random = SecureRandom()
         val token = buildString {
             repeat(8) { append("ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[random.nextInt(32)]) }
         }
+        val ip = forcedHost ?: NetworkAddress.localIpv4(appContext) ?: "192.168.43.1"
         return PairingInfo(
-            host = NetworkAddress.localIpv4() ?: "0.0.0.0",
+            host = ip,
             port = port,
             token = token,
             hostId = hostId,
@@ -117,7 +255,7 @@ class RemoteHostServer(
                 return
             }
             val json = JSONObject(String(handshake.payload, Charsets.UTF_8))
-            val nodeId = json.optString("nodeId").ifEmpty { socket.inetAddress.hostAddress }
+            val nodeId = json.optString("nodeId").ifEmpty { socket.inetAddress.hostAddress ?: "node" }
             val nodeName = json.optString("name", "Camera Node")
             val factory = connectionFactory
             if (factory == null) {

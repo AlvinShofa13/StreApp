@@ -538,7 +538,7 @@ private fun StudioWorkspaceScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    ErrorBanner(state.errorRes, onDismiss = { engine.consumeError() })
+                    ErrorBanner(state.errorRes, state.errorDetail, onDismiss = { engine.consumeError() })
 
                     InteractivePreviewCanvas(
                         sources = activeScene?.sources.orEmpty(),
@@ -616,7 +616,7 @@ private fun StudioWorkspaceScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ErrorBanner(state.errorRes, onDismiss = { engine.consumeError() })
+                ErrorBanner(state.errorRes, state.errorDetail, onDismiss = { engine.consumeError() })
 
                 InteractivePreviewCanvas(
                     sources = activeScene?.sources.orEmpty(),
@@ -693,9 +693,12 @@ private fun StudioWorkspaceScreen(
 @Composable
 private fun ErrorBanner(
     errorRes: Int?,
+    errorDetail: String? = null,
     onDismiss: () -> Unit,
 ) {
     if (errorRes == null) return
+    val baseMsg = stringResource(errorRes)
+    val fullMsg = if (!errorDetail.isNullOrBlank()) "$baseMsg ($errorDetail)" else baseMsg
     Surface(
         color = Rekam.copy(alpha = 0.12f),
         shape = RoundedCornerShape(12.dp),
@@ -707,7 +710,7 @@ private fun ErrorBanner(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stringResource(errorRes),
+                text = fullMsg,
                 fontSize = 12.sp,
                 color = Rekam,
                 fontWeight = FontWeight.Medium,

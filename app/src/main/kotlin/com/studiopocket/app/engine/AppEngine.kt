@@ -1000,7 +1000,10 @@ class AppEngine(val context: Context) {
         }
         scope.launch(Dispatchers.IO) {
             try {
-                val server = RemoteHostServer(context.getString(R.string.app_name))
+                val server = RemoteHostServer(
+                    hostName = context.getString(R.string.app_name),
+                    appContext = context.applicationContext,
+                )
                 server.connectionFactory = { nodeId, nodeName, socket, token ->
                     val runtime = synchronized(runtimeLock) {
                         runtimes.values.firstOrNull {
@@ -1038,10 +1041,23 @@ class AppEngine(val context: Context) {
                 }
                 val pairing = server.start()
                 remoteServer = server
-                mutableState.update { it.copy(remotePairing = pairing) }
+                mutableState.update {
+                    it.copy(
+                        remotePairing = pairing,
+                        remoteEndpoints = server.availableEndpoints,
+                        errorRes = null,
+                        errorDetail = null,
+                    )
+                }
             } catch (t: Throwable) {
                 Log.e(TAG, "Gagal memulai Host Camera Node", t)
-                mutableState.update { it.copy(errorRes = R.string.remote_error_start) }
+                val detail = "${t.javaClass.simpleName}: ${t.message ?: ""}".trim()
+                mutableState.update {
+                    it.copy(
+                        errorRes = R.string.remote_error_start,
+                        errorDetail = detail,
+                    )
+                }
             }
         }
         return remoteServer?.pairing
@@ -1049,16 +1065,34 @@ class AppEngine(val context: Context) {
 
     fun rotateRemoteToken(): PairingInfo? {
         scope.launch(Dispatchers.IO) {
-            val pairing = remoteServer?.rotateToken()
-            mutableState.update { it.copy(remotePairing = pairing) }
+            val srv = remoteServer ?: return@launch
+            val pairing = srv.rotateToken()
+            mutableState.update {
+                it.copy(
+                    remotePairing = pairing,
+                    remoteEndpoints = srv.availableEndpoints,
+                )
+            }
         }
         return remoteServer?.pairing
+    }
+
+    fun selectRemoteHostIp(ip: String) {
+        val srv = remoteServer ?: return
+        val pairing = srv.selectHostIp(ip)
+        mutableState.update { it.copy(remotePairing = pairing) }
     }
 
     fun stopRemoteHost() {
         val srv = remoteServer
         remoteServer = null
-        mutableState.update { it.copy(remotePairing = null, remoteNodes = emptyList()) }
+        mutableState.update {
+            it.copy(
+                remotePairing = null,
+                remoteEndpoints = emptyList(),
+                remoteNodes = emptyList(),
+            )
+        }
         if (srv != null) {
             scope.launch(Dispatchers.IO) { srv.stop() }
         }
@@ -1127,7 +1161,7 @@ class AppEngine(val context: Context) {
     }
 
     fun consumeError() {
-        mutableState.update { it.copy(errorRes = null) }
+        mutableState.update { it.copy(errorRes = null, errorDetail = null) }
     }
 
     // ---------------------------------------------------------------- util

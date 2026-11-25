@@ -226,7 +226,10 @@
     <string name="remote_rotate_token">Refresh Token</string>
     <string name="remote_connected_nodes">Connected: %1$s</string>
     <string name="remote_no_nodes">No Camera Nodes connected.</string>
-    <string name="remote_hint">Ensure the second phone is on the same Wi-Fi or hotspot, then scan this QR code.</string>
+    <string name="remote_hint">Ensure the second phone is on the same Wi-Fi, hotspot, or USB Tethering cable, then scan this QR code.</string>
+    <string name="remote_usb_cable_hint">USB Cable option: Connect both phones via USB/OTG cable and enable USB Tethering on either phone for low-latency wired pairing without Wi-Fi.</string>
+    <string name="remote_link_usb">USB Cable</string>
+    <string name="remote_link_wifi">Wi-Fi / Hotspot</string>
 
     <!-- Settings Options -->
     <string name="settings_preset">Quality Preset</string>
