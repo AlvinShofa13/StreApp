@@ -92,6 +92,11 @@
     <string name="canvas_orientation_landscape">Lanskap (16:9)</string>
     <string name="canvas_orientation_portrait">Potret (9:16)</string>
     <string name="canvas_panel_toggle">Panel</string>
+    <string name="canvas_fullscreen_enter">Layar Penuh</string>
+    <string name="canvas_fullscreen_exit">Keluar</string>
+    <string name="timer_minimize">Kecilkan Timer</string>
+    <string name="timer_hide">Sembunyikan Timer</string>
+    <string name="timer_show">Tampilkan Timer</string>
 
     <!-- Scenes & Templates -->
     <string name="scene_add">Tambah Scene</string>

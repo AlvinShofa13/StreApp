@@ -92,6 +92,11 @@
     <string name="canvas_orientation_landscape">Landscape (16:9)</string>
     <string name="canvas_orientation_portrait">Portrait (9:16)</string>
     <string name="canvas_panel_toggle">Panels</string>
+    <string name="canvas_fullscreen_enter">Fullscreen</string>
+    <string name="canvas_fullscreen_exit">Exit</string>
+    <string name="timer_minimize">Minimize Timer</string>
+    <string name="timer_hide">Hide Timer</string>
+    <string name="timer_show">Show Timer</string>
 
     <!-- Scenes & Templates -->
     <string name="scene_add">Add Scene</string>

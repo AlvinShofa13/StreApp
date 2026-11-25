@@ -15,7 +15,11 @@ import android.widget.MediaController
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -61,6 +65,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -227,6 +233,16 @@ class MainActivity : ComponentActivity() {
                             }
                             debugOverlay?.toggle()
                         },
+                        onSetSystemBarsVisible = { visible ->
+                            val controller = WindowCompat.getInsetsController(window, window.decorView)
+                            controller.systemBarsBehavior =
+                                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                            if (visible) {
+                                controller.show(WindowInsetsCompat.Type.systemBars())
+                            } else {
+                                controller.hide(WindowInsetsCompat.Type.systemBars())
+                            }
+                        },
                     )
                 }
             }
@@ -287,6 +303,7 @@ private fun StudioWorkspaceScreen(
     onPickImageOverlay: () -> Unit,
     onExportVideo: (File) -> Unit,
     onToggleDebugOverlay: () -> Unit,
+    onSetSystemBarsVisible: (Boolean) -> Unit,
 ) {
     val state by engine.state.collectAsState()
     val config = LocalConfiguration.current
@@ -295,10 +312,53 @@ private fun StudioWorkspaceScreen(
     var activeTab by rememberSaveable { mutableStateOf(StudioTab.SOURCES) }
     var canvasLocked by rememberSaveable { mutableStateOf(false) }
     var showLandscapeDock by rememberSaveable { mutableStateOf(true) }
+    var isPreviewFullscreen by rememberSaveable { mutableStateOf(false) }
 
     val activeScene = state.project.activeScene
     val sceneName = activeScene?.name ?: stringResource(R.string.scene_default)
 
+    BackHandler(enabled = isPreviewFullscreen) {
+        isPreviewFullscreen = false
+    }
+
+    LaunchedEffect(isPreviewFullscreen) {
+        onSetSystemBarsVisible(!isPreviewFullscreen)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onSetSystemBarsVisible(true) }
+    }
+
+    if (isPreviewFullscreen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0B0F14)),
+        ) {
+            InteractivePreviewCanvas(
+                sources = activeScene?.sources.orEmpty(),
+                selectedSourceId = state.selectedSourceId,
+                sceneName = sceneName,
+                resolutionLabel = state.recordingResolution.shortLabel,
+                outputWidth = state.outputWidth,
+                outputHeight = state.outputHeight,
+                recording = state.recording,
+                recordingMs = state.recordingMs,
+                previewEnabled = state.previewEnabled,
+                canvasLocked = true,
+                isFullscreen = true,
+                onToggleLock = {},
+                onTogglePreview = { engine.setPreviewEnabled(!state.previewEnabled) },
+                onToggleFullscreen = { isPreviewFullscreen = false },
+                onToggleRecording = onToggleRecording,
+                onSelectSource = {},
+                onUpdateTransform = { id, t -> engine.setTransform(id, t) },
+                onAttachPreview = { surface, w, h -> engine.attachPreview(surface, w, h) },
+                onDetachPreview = { engine.detachPreview() },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    } else {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -434,8 +494,10 @@ private fun StudioWorkspaceScreen(
                         recordingMs = state.recordingMs,
                         previewEnabled = state.previewEnabled,
                         canvasLocked = canvasLocked,
+                        isFullscreen = false,
                         onToggleLock = { canvasLocked = !canvasLocked },
                         onTogglePreview = { engine.setPreviewEnabled(!state.previewEnabled) },
+                        onToggleFullscreen = { isPreviewFullscreen = true },
                         onSelectSource = { engine.selectSource(it) },
                         onUpdateTransform = { id, t -> engine.setTransform(id, t) },
                         onAttachPreview = { surface, w, h -> engine.attachPreview(surface, w, h) },
@@ -508,8 +570,10 @@ private fun StudioWorkspaceScreen(
                     recordingMs = state.recordingMs,
                     previewEnabled = state.previewEnabled,
                     canvasLocked = canvasLocked,
+                    isFullscreen = false,
                     onToggleLock = { canvasLocked = !canvasLocked },
                     onTogglePreview = { engine.setPreviewEnabled(!state.previewEnabled) },
+                    onToggleFullscreen = { isPreviewFullscreen = true },
                     onSelectSource = { engine.selectSource(it) },
                     onUpdateTransform = { id, t -> engine.setTransform(id, t) },
                     onAttachPreview = { surface, w, h -> engine.attachPreview(surface, w, h) },
@@ -547,6 +611,7 @@ private fun StudioWorkspaceScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
     }
 
     // Dialog Pratinjau & Simpan Setelah Rekaman Berhenti

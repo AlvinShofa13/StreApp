@@ -25,8 +25,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Card
@@ -40,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,13 +73,15 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 private enum class DragMode { NONE, MOVE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+private enum class TimerDisplayMode { COMPACT, MINIMIZED, HIDDEN }
 
 private const val SNAP_THRESHOLD = 0.025f
 private const val MIN_SIZE_FRACTION = 0.10f
 
 /**
  * Kanvas Pratinjau OBS Interaktif:
- * - Menampilkan output kompositor OpenGL secara real time.
+ * - Menampilkan output kompositor OpenGL secara real time (mode normal dan layar penuh).
+ * - Timer rekaman ringkas yang bisa dikecilkan (minimized dot) atau disembunyikan penuh.
  * - Ketuk sumber untuk memilih, geser untuk memindah (dengan snap tepi & tengah),
  *   dan tarik salah satu dari 4 handle sudut untuk mengatur besar-kecil ukuran sumber.
  */
@@ -89,8 +97,11 @@ fun InteractivePreviewCanvas(
     recordingMs: Long,
     previewEnabled: Boolean,
     canvasLocked: Boolean,
+    isFullscreen: Boolean,
     onToggleLock: () -> Unit,
     onTogglePreview: () -> Unit,
+    onToggleFullscreen: () -> Unit,
+    onToggleRecording: (() -> Unit)? = null,
     onSelectSource: (String?) -> Unit,
     onUpdateTransform: (String, Transform) -> Unit,
     onAttachPreview: (Surface, Int, Int) -> Unit,
@@ -110,32 +121,50 @@ fun InteractivePreviewCanvas(
     var dragSourceId by remember { mutableStateOf<String?>(null) }
     var dragTransform by remember { mutableStateOf<Transform?>(null) }
 
+    var timerMode by rememberSaveable { mutableStateOf(TimerDisplayMode.COMPACT) }
+    var fullscreenControlsVisible by rememberSaveable { mutableStateOf(true) }
+
     val aspectRatio = (outputWidth.toFloat() / outputHeight.coerceAtLeast(1).toFloat())
         .coerceIn(0.5f, 2.2f)
     val isPortraitCanvas = outputHeight > outputWidth
 
-    Card(
-        modifier = modifier
+    val containerModifier = if (isFullscreen) {
+        modifier
+            .fillMaxSize()
+            .background(Color(0xFF0B0F14))
+    } else {
+        modifier
             .fillMaxWidth()
-            .then(
-                if (isPortraitCanvas) {
-                    Modifier.heightIn(max = 320.dp)
-                } else {
-                    Modifier
-                },
-            ),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF18212B)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            .then(if (isPortraitCanvas) Modifier.heightIn(max = 320.dp) else Modifier)
+    }
+
+    Card(
+        modifier = containerModifier,
+        shape = if (isFullscreen) RoundedCornerShape(0.dp) else RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isFullscreen) Color(0xFF0B0F14) else Color(0xFF18212B),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isFullscreen) 0.dp else 2.dp),
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
                 .then(
-                    if (isPortraitCanvas) {
-                        Modifier.height(290.dp)
+                    if (isFullscreen) {
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectTapGestures {
+                                    fullscreenControlsVisible = !fullscreenControlsVisible
+                                }
+                            }
+                    } else if (isPortraitCanvas) {
+                        Modifier
+                            .fillMaxWidth()
+                            .height(290.dp)
                     } else {
-                        Modifier.aspectRatio(aspectRatio)
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(aspectRatio)
                     },
                 ),
             contentAlignment = Alignment.Center,
@@ -143,12 +172,12 @@ fun InteractivePreviewCanvas(
             Box(
                 modifier = Modifier
                     .then(
-                        if (isPortraitCanvas) {
-                            Modifier
+                        when {
+                            isFullscreen -> Modifier.aspectRatio(aspectRatio)
+                            isPortraitCanvas -> Modifier
                                 .fillMaxHeight()
                                 .aspectRatio(aspectRatio)
-                        } else {
-                            Modifier.fillMaxSize()
+                            else -> Modifier.fillMaxSize()
                         },
                     )
                     .onSizeChanged { boxSize = it },
@@ -218,8 +247,8 @@ fun InteractivePreviewCanvas(
                     }
                 }
 
-                // Interactive Gesture & Bounding Box Overlay (OBS-style)
-                if (previewEnabled && !canvasLocked) {
+                // Interactive Gesture & Bounding Box Overlay (hanya di mode non-fullscreen)
+                if (previewEnabled && !canvasLocked && !isFullscreen) {
                     val selectedSource = sources.firstOrNull { it.id == selectedSourceId && it.visible }
 
                     Box(
@@ -309,7 +338,6 @@ fun InteractivePreviewCanvas(
                                             DragMode.MOVE -> {
                                                 var nx = (currentT.x + dx).coerceIn(0f, 1f - currentT.width)
                                                 var ny = (currentT.y + dy).coerceIn(0f, 1f - currentT.height)
-                                                // Snap ke tepi & tengah
                                                 val centerX = (1f - currentT.width) / 2f
                                                 val centerY = (1f - currentT.height) / 2f
                                                 snapCenterX = abs(nx - centerX) < SNAP_THRESHOLD
@@ -365,7 +393,6 @@ fun InteractivePreviewCanvas(
                             val w = size.width
                             val h = size.height
 
-                            // Garis bantu snap tengah
                             if (snapCenterX) {
                                 drawLine(
                                     color = Aksen,
@@ -383,7 +410,6 @@ fun InteractivePreviewCanvas(
                                 )
                             }
 
-                            // Bounding box sumber terpilih + 4 handle sudut untuk resize
                             val active = selectedSource
                             if (active != null) {
                                 val t = dragTransform?.takeIf { dragSourceId == active.id } ?: active.transform
@@ -421,47 +447,24 @@ fun InteractivePreviewCanvas(
                 }
             }
 
-            // Top overlay controls (Lock Canvas & Hide Preview)
+            // Bilah Kontrol Atas (di mode fullscreen bisa disembunyikan dengan ketuk layar)
+            val showTopBar = !isFullscreen || fullscreenControlsVisible
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .padding(8.dp),
+                    .padding(horizontal = 8.dp, vertical = if (isFullscreen) 14.dp else 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Pojok kiri atas: Timer Rekaman Kecil (bisa dikecilkan jadi titik / disembunyikan total)
                 if (recording) {
-                    val sec = recordingMs / 1000
-                    val duration = String.format(
-                        Locale.US,
-                        "%02d:%02d:%02d",
-                        sec / 3600,
-                        (sec % 3600) / 60,
-                        sec % 60,
+                    CompactRecordingTimer(
+                        recordingMs = recordingMs,
+                        mode = timerMode,
+                        onModeChange = { timerMode = it },
                     )
-                    ComposeSurface(
-                        color = Rekam,
-                        shape = RoundedCornerShape(8.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .background(Color.White, shape = CircleShape),
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "${stringResource(R.string.home_status_recording)} $duration",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    }
-                } else {
+                } else if (!isFullscreen) {
                     val selected = sources.firstOrNull { it.id == selectedSourceId && it.visible }
                     if (selected != null && !canvasLocked) {
                         ComposeSurface(
@@ -476,7 +479,7 @@ fun InteractivePreviewCanvas(
                                     (selected.transform.height * 100).roundToInt(),
                                 ),
                                 color = Color.White,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             )
@@ -484,81 +487,271 @@ fun InteractivePreviewCanvas(
                     } else {
                         Spacer(modifier = Modifier.width(1.dp))
                     }
+                } else {
+                    Spacer(modifier = Modifier.width(1.dp))
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ComposeSurface(
-                        color = Color.Black.copy(alpha = 0.56f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.clickable { onToggleLock() },
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = if (canvasLocked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
-                                contentDescription = stringResource(
-                                    if (canvasLocked) R.string.canvas_lock else R.string.canvas_unlock,
-                                ),
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp),
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = stringResource(
-                                    if (canvasLocked) R.string.canvas_lock else R.string.canvas_unlock,
-                                ),
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                            )
+                // Pojok kanan atas: Kontrol cepat & tombol Layar Penuh
+                if (showTopBar) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // Tombol munculkan timer kembali jika sedang disembunyikan
+                        if (recording && timerMode == TimerDisplayMode.HIDDEN) {
+                            ComposeSurface(
+                                color = Color.Black.copy(alpha = 0.56f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable { timerMode = TimerDisplayMode.COMPACT },
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Timer,
+                                        contentDescription = stringResource(R.string.timer_show),
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                }
+                            }
                         }
-                    }
 
-                    ComposeSurface(
-                        color = Color.Black.copy(alpha = 0.56f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.clickable { onTogglePreview() },
-                    ) {
-                        Box(
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
-                            contentAlignment = Alignment.Center,
+                        if (!isFullscreen) {
+                            ComposeSurface(
+                                color = Color.Black.copy(alpha = 0.56f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable { onToggleLock() },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(
+                                        imageVector = if (canvasLocked) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                                        contentDescription = stringResource(
+                                            if (canvasLocked) R.string.canvas_lock else R.string.canvas_unlock,
+                                        ),
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = stringResource(
+                                            if (canvasLocked) R.string.canvas_lock else R.string.canvas_unlock,
+                                        ),
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                }
+                            }
+
+                            ComposeSurface(
+                                color = Color.Black.copy(alpha = 0.56f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable { onTogglePreview() },
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = if (previewEnabled) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                                        contentDescription = stringResource(
+                                            if (previewEnabled) R.string.canvas_preview_off else R.string.canvas_preview_on,
+                                        ),
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp),
+                                    )
+                                }
+                            }
+                        } else if (onToggleRecording != null) {
+                            // Tombol Rekam / Hentikan ringkas di mode Layar Penuh
+                            ComposeSurface(
+                                color = if (recording) Rekam.copy(alpha = 0.88f) else Color.Black.copy(alpha = 0.62f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.clickable { onToggleRecording() },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(9.dp)
+                                            .background(
+                                                color = if (recording) Color.White else Rekam,
+                                                shape = if (recording) RoundedCornerShape(2.dp) else CircleShape,
+                                            ),
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = stringResource(
+                                            if (recording) R.string.notif_stop else R.string.recording_start,
+                                        ),
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        }
+
+                        // Tombol Layar Penuh / Keluar Layar Penuh
+                        ComposeSurface(
+                            color = Color.Black.copy(alpha = 0.62f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.clickable { onToggleFullscreen() },
                         ) {
-                            Icon(
-                                imageVector = if (previewEnabled) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
-                                contentDescription = stringResource(
-                                    if (previewEnabled) R.string.canvas_preview_off else R.string.canvas_preview_on,
+                            Row(
+                                modifier = Modifier.padding(
+                                    horizontal = if (isFullscreen) 10.dp else 7.dp,
+                                    vertical = if (isFullscreen) 6.dp else 5.dp,
                                 ),
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp),
-                            )
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = if (isFullscreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                                    contentDescription = stringResource(
+                                        if (isFullscreen) R.string.canvas_fullscreen_exit else R.string.canvas_fullscreen_enter,
+                                    ),
+                                    tint = Color.White,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                                if (isFullscreen) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = stringResource(R.string.canvas_fullscreen_exit),
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // Bottom subtle info bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .background(Color.Black.copy(alpha = 0.52f))
-                    .padding(horizontal = 12.dp, vertical = 5.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            // Bilah info bawah (hanya di mode normal agar layar penuh bersih)
+            if (!isFullscreen) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(Color.Black.copy(alpha = 0.52f))
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = sceneName,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "$resolutionLabel • ${outputWidth}x${outputHeight}",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 10.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Timer rekaman ringkas:
+ * - COMPACT: pill kecil (titik merah + MM:SS) dengan tombol kecilkan (-) dan sembunyikan (x).
+ * - MINIMIZED: titik merah mini tidak mengganggu; ketuk untuk membuka kembali.
+ * - HIDDEN: hilang total (munculkan lagi lewat tombol ikon jam di pojok kanan atas).
+ */
+@Composable
+private fun CompactRecordingTimer(
+    recordingMs: Long,
+    mode: TimerDisplayMode,
+    onModeChange: (TimerDisplayMode) -> Unit,
+) {
+    when (mode) {
+        TimerDisplayMode.HIDDEN -> {
+            Spacer(modifier = Modifier.width(1.dp))
+        }
+
+        TimerDisplayMode.MINIMIZED -> {
+            ComposeSurface(
+                color = Color.Black.copy(alpha = 0.52f),
+                shape = CircleShape,
+                modifier = Modifier.clickable { onModeChange(TimerDisplayMode.COMPACT) },
             ) {
-                Text(
-                    text = sceneName,
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "$resolutionLabel • ${outputWidth}x${outputHeight}",
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 10.sp,
-                )
+                Box(
+                    modifier = Modifier.padding(6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(Rekam, shape = CircleShape),
+                    )
+                }
+            }
+        }
+
+        TimerDisplayMode.COMPACT -> {
+            val sec = recordingMs / 1000
+            val hours = sec / 3600
+            val duration = if (hours > 0) {
+                String.format(Locale.US, "%d:%02d:%02d", hours, (sec % 3600) / 60, sec % 60)
+            } else {
+                String.format(Locale.US, "%02d:%02d", (sec % 3600) / 60, sec % 60)
+            }
+
+            ComposeSurface(
+                color = Color.Black.copy(alpha = 0.58f),
+                shape = RoundedCornerShape(999.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 7.dp, end = 4.dp, top = 3.dp, bottom = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(Rekam, shape = CircleShape),
+                    )
+                    Text(
+                        text = duration,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { onModeChange(TimerDisplayMode.MINIMIZED) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Remove,
+                            contentDescription = stringResource(R.string.timer_minimize),
+                            tint = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { onModeChange(TimerDisplayMode.HIDDEN) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = stringResource(R.string.timer_hide),
+                            tint = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                }
             }
         }
     }
