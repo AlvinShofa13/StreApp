@@ -236,6 +236,9 @@ class MainActivity : ComponentActivity() {
                         onToggleRecording = { toggleRecording() },
                         onRequestScreenCapture = { requestScreenCapture() },
                         onPickImageOverlay = { imagePickerLauncher.launch(arrayOf("image/*")) },
+                        onOpenCameraNodeScanner = {
+                            startActivity(Intent(this@MainActivity, CameraNodeActivity::class.java))
+                        },
                         onExportVideo = { file ->
                             pendingExportFile = file
                             exportDocumentLauncher.launch(file.name)
@@ -335,6 +338,7 @@ private fun StudioWorkspaceScreen(
     onToggleRecording: () -> Unit,
     onRequestScreenCapture: () -> Unit,
     onPickImageOverlay: () -> Unit,
+    onOpenCameraNodeScanner: () -> Unit,
     onExportVideo: (File) -> Unit,
     onToggleDebugOverlay: () -> Unit,
     onSetSystemBarsVisible: (Boolean) -> Unit,
@@ -596,6 +600,7 @@ private fun StudioWorkspaceScreen(
                                 appVersion = appVersion,
                                 onRequestScreenCapture = onRequestScreenCapture,
                                 onPickImageOverlay = onPickImageOverlay,
+                                onOpenCameraNodeScanner = onOpenCameraNodeScanner,
                             )
                         }
                     }
@@ -661,6 +666,7 @@ private fun StudioWorkspaceScreen(
                     appVersion = appVersion,
                     onRequestScreenCapture = onRequestScreenCapture,
                     onPickImageOverlay = onPickImageOverlay,
+                    onOpenCameraNodeScanner = onOpenCameraNodeScanner,
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -864,6 +870,7 @@ private fun StudioDockContent(
     appVersion: String,
     onRequestScreenCapture: () -> Unit,
     onPickImageOverlay: () -> Unit,
+    onOpenCameraNodeScanner: () -> Unit,
 ) {
     when (tab) {
         StudioTab.SOURCES -> SourcesPanel(
@@ -889,6 +896,7 @@ private fun StudioDockContent(
             state = state,
             engine = engine,
             appVersion = appVersion,
+            onOpenCameraNodeScanner = onOpenCameraNodeScanner,
         )
     }
 }

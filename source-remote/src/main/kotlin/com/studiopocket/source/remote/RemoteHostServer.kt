@@ -51,12 +51,17 @@ class RemoteHostServer(
 
     fun start(): PairingInfo {
         if (running) return pairing
-        running = true
         val socket = try {
             ServerSocket(preferredPort)
         } catch (_: Throwable) {
-            ServerSocket(0)
+            try {
+                ServerSocket(0)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Gagal membuka ServerSocket: ${t.message}", t)
+                throw t
+            }
         }
+        running = true
         server = socket
         pairing = buatPairing(socket.localPort)
         thread = Thread({ terimaLoop(socket) }, "SP-RemoteHost").apply {

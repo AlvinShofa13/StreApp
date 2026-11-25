@@ -205,7 +205,23 @@
 
     <!-- Camera Node -->
     <string name="remote_title">Mode Dua Ponsel (Camera Node)</string>
-    <string name="remote_start_host">Tampilkan QR Pairing</string>
+    <string name="remote_start_host">Tampilkan QR (Host)</string>
+    <string name="remote_scan_node">Pindai QR (Kamera)</string>
+    <string name="remote_node_role">Mode Camera Node (HP B)</string>
+    <string name="remote_scan_qr_btn">Pindai QR Host</string>
+    <string name="remote_scan_prompt">Arahkan kamera ke kode QR pada HP Host</string>
+    <string name="remote_manual_title">Atau sambungkan manual (Wi-Fi / Hotspot sama)</string>
+    <string name="remote_host_ip">IP Host</string>
+    <string name="remote_port">Port</string>
+    <string name="remote_token">Token</string>
+    <string name="remote_connect">Sambung</string>
+    <string name="remote_disconnect">Putus</string>
+    <string name="remote_send_audio">Kirim Audio Mikrofon ke Host</string>
+    <string name="remote_invalid_qr">Kode QR tidak dikenali sebagai QR Pairing StreApp.</string>
+    <string name="remote_error_start">Gagal membuka server pairing. Pastikan Wi-Fi atau hotspot aktif.</string>
+    <string name="remote_status_connecting">Menyambungkan</string>
+    <string name="remote_status_active">Tersambung</string>
+    <string name="remote_status_disconnected">Terputus</string>
     <string name="remote_stop_host">Tutup Pairing</string>
     <string name="remote_rotate_token">Perbarui Token</string>
     <string name="remote_connected_nodes">Tersambung: %1$s</string>

@@ -69,6 +69,7 @@ fun SettingsPanel(
     state: EngineState,
     engine: AppEngine,
     appVersion: String = "1.1.1",
+    onOpenCameraNodeScanner: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val activeSources = state.project.activeScene?.sources.orEmpty().filter { it.visible }
@@ -366,15 +367,40 @@ fun SettingsPanel(
 
                 val pairing = state.remotePairing
                 if (pairing == null) {
-                    OutlinedButton(
-                        onClick = { engine.startRemoteHost() },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(1.dp, Aksen),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(stringResource(R.string.remote_start_host), color = Aksen, fontWeight = FontWeight.SemiBold)
+                        OutlinedButton(
+                            onClick = { engine.startRemoteHost() },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Aksen),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.remote_start_host),
+                                color = Aksen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onOpenCameraNodeScanner,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Berhasil),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.remote_scan_node),
+                                color = Berhasil,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 } else {
                     Text(

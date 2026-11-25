@@ -984,60 +984,84 @@ class AppEngine(val context: Context) {
     // ---------------------------------------------------------------- Camera Node
 
     fun startRemoteHost(): PairingInfo? {
-        if (remoteServer == null) {
-            val server = RemoteHostServer(context.getString(R.string.app_name))
-            server.connectionFactory = { nodeId, nodeName, socket, token ->
-                val runtime = synchronized(runtimeLock) {
-                    runtimes.values.firstOrNull { it.source is RemoteSource && (it.source as RemoteSource).connection == null }
-                        ?: runtimes.values.firstOrNull { it.source is RemoteSource }
-                }
-                val source = runtime?.source as? RemoteSource
-                    ?: throw IllegalStateException("Belum ada sumber Camera Node di scene")
-                val remoteAudio = audioEngine?.addRemoteInput(nodeName)
-                synchronized(runtimeLock) { runtime.remoteAudio = remoteAudio }
-                RemoteNodeConnection(
-                    nodeId = nodeId,
-                    nodeName = nodeName,
-                    socket = socket,
-                    token = token,
-                    textureProvider = { source.previewTexture },
-                    onPcm = { pcm, frames -> remoteAudio?.push(pcm, frames) },
-                    onStatus = { status ->
-                        if (status == RemoteNodeStatus.TERPUTUS) source.onConnectionLost()
-                        scope.launch {
-                            mutableState.update {
-                                val nodes = if (status == RemoteNodeStatus.TERPUTUS) {
-                                    it.remoteNodes - nodeName
-                                } else {
-                                    (it.remoteNodes + nodeName).distinct()
-                                }
-                                it.copy(remoteNodes = nodes)
-                            }
-                        }
-                    },
-                ).also { source.attach(it) }
-            }
-            server.onPairingRejected = {
-                scope.launch { mutableState.update { s -> s.copy(errorRes = R.string.error_node_rejected) } }
-            }
-            server.start()
-            remoteServer = server
+        val existing = remoteServer
+        if (existing != null) {
+            val p = existing.pairing
+            mutableState.update { it.copy(remotePairing = p) }
+            return p
         }
-        val pairing = remoteServer?.pairing
-        mutableState.update { it.copy(remotePairing = pairing) }
-        return pairing
+        // Pastikan ada minimal satu sumber REMOTE di scene aktif agar Node langsung tampil saat tersambung
+        val scene = mutableState.value.project.activeScene
+        if (scene != null && scene.sources.none { it.type == SourceType.REMOTE }) {
+            val id = addSource(SourceType.REMOTE, context.getString(R.string.source_type_remote))
+            if (id != null) {
+                setTransform(id, Transform(0.64f, 0.05f, 0.32f, 0.34f))
+            }
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                val server = RemoteHostServer(context.getString(R.string.app_name))
+                server.connectionFactory = { nodeId, nodeName, socket, token ->
+                    val runtime = synchronized(runtimeLock) {
+                        runtimes.values.firstOrNull {
+                            it.source is RemoteSource && (it.source as RemoteSource).connection == null
+                        } ?: runtimes.values.firstOrNull { it.source is RemoteSource }
+                    }
+                    val source = runtime?.source as? RemoteSource
+                        ?: throw IllegalStateException("Belum ada sumber Camera Node di scene")
+                    val remoteAudio = audioEngine?.addRemoteInput(nodeName)
+                    synchronized(runtimeLock) { runtime.remoteAudio = remoteAudio }
+                    RemoteNodeConnection(
+                        nodeId = nodeId,
+                        nodeName = nodeName,
+                        socket = socket,
+                        token = token,
+                        textureProvider = { source.previewTexture },
+                        onPcm = { pcm, frames -> remoteAudio?.push(pcm, frames) },
+                        onStatus = { status ->
+                            if (status == RemoteNodeStatus.TERPUTUS) source.onConnectionLost()
+                            scope.launch {
+                                mutableState.update {
+                                    val nodes = if (status == RemoteNodeStatus.TERPUTUS) {
+                                        it.remoteNodes - nodeName
+                                    } else {
+                                        (it.remoteNodes + nodeName).distinct()
+                                    }
+                                    it.copy(remoteNodes = nodes)
+                                }
+                            }
+                        },
+                    ).also { source.attach(it) }
+                }
+                server.onPairingRejected = {
+                    scope.launch { mutableState.update { s -> s.copy(errorRes = R.string.error_node_rejected) } }
+                }
+                val pairing = server.start()
+                remoteServer = server
+                mutableState.update { it.copy(remotePairing = pairing) }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Gagal memulai Host Camera Node", t)
+                mutableState.update { it.copy(errorRes = R.string.remote_error_start) }
+            }
+        }
+        return remoteServer?.pairing
     }
 
     fun rotateRemoteToken(): PairingInfo? {
-        val pairing = remoteServer?.rotateToken()
-        mutableState.update { it.copy(remotePairing = pairing) }
-        return pairing
+        scope.launch(Dispatchers.IO) {
+            val pairing = remoteServer?.rotateToken()
+            mutableState.update { it.copy(remotePairing = pairing) }
+        }
+        return remoteServer?.pairing
     }
 
     fun stopRemoteHost() {
-        remoteServer?.stop()
+        val srv = remoteServer
         remoteServer = null
         mutableState.update { it.copy(remotePairing = null, remoteNodes = emptyList()) }
+        if (srv != null) {
+            scope.launch(Dispatchers.IO) { srv.stop() }
+        }
     }
 
     // ---------------------------------------------------------------- termal & status

@@ -205,7 +205,23 @@
 
     <!-- Camera Node -->
     <string name="remote_title">Two-Phone Mode (Camera Node)</string>
-    <string name="remote_start_host">Show Pairing QR</string>
+    <string name="remote_start_host">Show QR (Host)</string>
+    <string name="remote_scan_node">Scan QR (Camera)</string>
+    <string name="remote_node_role">Camera Node Mode (Phone B)</string>
+    <string name="remote_scan_qr_btn">Scan Host QR</string>
+    <string name="remote_scan_prompt">Point camera at the QR code on Host phone</string>
+    <string name="remote_manual_title">Or connect manually (same Wi-Fi / Hotspot)</string>
+    <string name="remote_host_ip">Host IP</string>
+    <string name="remote_port">Port</string>
+    <string name="remote_token">Token</string>
+    <string name="remote_connect">Connect</string>
+    <string name="remote_disconnect">Disconnect</string>
+    <string name="remote_send_audio">Send Microphone Audio to Host</string>
+    <string name="remote_invalid_qr">QR code is not a valid StreApp pairing code.</string>
+    <string name="remote_error_start">Failed to start pairing server. Ensure Wi-Fi or hotspot is active.</string>
+    <string name="remote_status_connecting">Connecting</string>
+    <string name="remote_status_active">Connected</string>
+    <string name="remote_status_disconnected">Disconnected</string>
     <string name="remote_stop_host">Stop Pairing</string>
     <string name="remote_rotate_token">Refresh Token</string>
     <string name="remote_connected_nodes">Connected: %1$s</string>
