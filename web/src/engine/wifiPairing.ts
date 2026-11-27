@@ -50,11 +50,9 @@ function base64UrlToBytes(token: string): Uint8Array {
 async function compressDeflateRaw(bytes: Uint8Array): Promise<Uint8Array | null> {
   if (typeof CompressionStream === 'undefined') return null
   try {
-    const cs = new CompressionStream('deflate-raw')
-    const writer = cs.writable.getWriter()
-    await writer.write(new Uint8Array(bytes))
-    await writer.close()
-    const buf = await new Response(cs.readable).arrayBuffer()
+    const copy = new Uint8Array(bytes)
+    const stream = new Blob([copy]).stream().pipeThrough(new CompressionStream('deflate-raw'))
+    const buf = await new Response(stream).arrayBuffer()
     return new Uint8Array(buf)
   } catch {
     return null
@@ -65,11 +63,9 @@ async function decompressDeflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream === 'undefined') {
     throw new Error('Browser tidak mendukung DecompressionStream untuk kode terkompresi.')
   }
-  const ds = new DecompressionStream('deflate-raw')
-  const writer = ds.writable.getWriter()
-  await writer.write(new Uint8Array(bytes))
-  await writer.close()
-  const buf = await new Response(ds.readable).arrayBuffer()
+  const copy = new Uint8Array(bytes)
+  const stream = new Blob([copy]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
+  const buf = await new Response(stream).arrayBuffer()
   return new Uint8Array(buf)
 }
 
@@ -132,7 +128,7 @@ export function buildAndroidWebBridgeUrl(info: AndroidHostPairing): string {
   return `http://${info.host}:${info.webPort}/?token=${encodeURIComponent(info.token)}`
 }
 
-function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 4000): Promise<void> {
+function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 1500): Promise<void> {
   if (pc.iceGatheringState === 'complete') return Promise.resolve()
   return new Promise((resolve) => {
     let settled = false
@@ -192,7 +188,7 @@ export class WifiHostSession {
 
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
-    await waitForIceGathering(pc, 4000)
+    await waitForIceGathering(pc, 1500)
 
     const localSdp = pc.localDescription?.sdp
     if (!localSdp) {
@@ -267,7 +263,7 @@ export class WifiNodeSession {
     await pc.setRemoteDescription({ type: 'offer', sdp: parsed.s })
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-    await waitForIceGathering(pc, 4000)
+    await waitForIceGathering(pc, 1500)
 
     const localSdp = pc.localDescription?.sdp
     if (!localSdp) {
