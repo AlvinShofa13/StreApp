@@ -20,6 +20,7 @@ const targetMode = ref<'WEB_HOST' | 'ANDROID_HOST'>('WEB_HOST')
 const videoRef = ref<HTMLVideoElement | null>(null)
 const facingMode = ref<'environment' | 'user'>('environment')
 const portraitMode = ref(true)
+const qualityMode = ref<'SMOOTH' | 'HD'>('SMOOTH')
 const sendAudio = ref(false)
 const linkInput = ref('')
 const activeRoomId = ref('')
@@ -62,10 +63,13 @@ async function startLocalCamera(): Promise<void> {
   const prevStream = localStream
   statusMsg.value = ''
   try {
+    const shortSide = qualityMode.value === 'HD' ? 720 : 540
+    const longSide = qualityMode.value === 'HD' ? 1280 : 960
+    const bitrateBps = qualityMode.value === 'HD' ? 2_400_000 : 1_500_000
     const videoConstraint: MediaTrackConstraints = {
       facingMode: { ideal: facingMode.value },
-      width: { ideal: portraitMode.value ? 720 : 1280 },
-      height: { ideal: portraitMode.value ? 1280 : 720 },
+      width: { ideal: portraitMode.value ? shortSide : longSide },
+      height: { ideal: portraitMode.value ? longSide : shortSide },
       frameRate: { ideal: 30, max: 30 },
     }
     const nextStream = await navigator.mediaDevices.getUserMedia({
@@ -79,7 +83,7 @@ async function startLocalCamera(): Promise<void> {
     }
     // Ganti track secara mulus tanpa memutus koneksi WebRTC yang sudah aktif!
     if (status.value === 'CONNECTED' || status.value === 'CONNECTING') {
-      await nodeSession.replaceStream(nextStream)
+      await nodeSession.replaceStream(nextStream, bitrateBps)
     }
     if (prevStream) {
       prevStream.getTracks().forEach((t) => t.stop())
@@ -110,6 +114,12 @@ async function setOrientation(portrait: boolean): Promise<void> {
   await startLocalCamera()
 }
 
+async function setQuality(mode: 'SMOOTH' | 'HD'): Promise<void> {
+  if (qualityMode.value === mode) return
+  qualityMode.value = mode
+  await startLocalCamera()
+}
+
 async function connectToWebHost(rawUrlOrCode?: string): Promise<void> {
   const source = (rawUrlOrCode ?? linkInput.value).trim()
   const room = parseRoomPairingUrl(source)
@@ -125,7 +135,8 @@ async function connectToWebHost(rawUrlOrCode?: string): Promise<void> {
   activeRoomId.value = room.roomId
   statusMsg.value = `Menyambungkan otomatis ke sesi ${room.roomId}…`
   try {
-    await nodeSession.connectToRoom(room, localStream, 'Kamera HP (Wi-Fi)')
+    const bitrateBps = qualityMode.value === 'HD' ? 2_400_000 : 1_500_000
+    await nodeSession.connectToRoom(room, localStream, 'Kamera HP (Wi-Fi)', bitrateBps)
   } catch (e) {
     status.value = 'ERROR'
     statusMsg.value = e instanceof Error ? e.message : 'Gagal menyambungkan ke Host Web.'
@@ -243,6 +254,12 @@ onBeforeUnmount(() => {
           </button>
           <button class="chip" :class="{ active: !portraitMode }" type="button" @click="setOrientation(false)">
             Lanskap (16:9)
+          </button>
+          <button class="chip" :class="{ active: qualityMode === 'SMOOTH' }" type="button" @click="setQuality('SMOOTH')">
+            Lancar (540p)
+          </button>
+          <button class="chip" :class="{ active: qualityMode === 'HD' }" type="button" @click="setQuality('HD')">
+            Tajam (720p)
           </button>
           <label class="row-gap" style="font-size: 12px; color: var(--text-secondary); margin-left: auto">
             <input v-model="sendAudio" type="checkbox" @change="startLocalCamera()" />

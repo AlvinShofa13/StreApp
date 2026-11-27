@@ -26,6 +26,7 @@ export class CanvasCompositor {
   private ctx: CanvasRenderingContext2D
   private running = false
   private timerId: number | null = null
+  private rafId: number | null = null
   private targetFps = 30
   private previewEnabled = true
   private previewLowPower = false
@@ -69,6 +70,12 @@ export class CanvasCompositor {
   }
 
   setRuntime(sourceId: string, runtime: VideoLayerRuntime): void {
+    const prev = this.runtimes.get(sourceId)
+    if (prev?.video && prev.video !== runtime.video) {
+      prev.video.pause()
+      prev.video.srcObject = null
+      prev.video.remove()
+    }
     this.runtimes.set(sourceId, runtime)
   }
 
@@ -81,6 +88,7 @@ export class CanvasCompositor {
       existing.video.pause()
       existing.video.srcObject = null
       existing.video.removeAttribute('src')
+      existing.video.remove()
     }
     if (existing?.objectUrl) {
       URL.revokeObjectURL(existing.objectUrl)
@@ -142,6 +150,10 @@ export class CanvasCompositor {
       window.clearTimeout(this.timerId)
       this.timerId = null
     }
+    if (this.rafId !== null) {
+      window.cancelAnimationFrame(this.rafId)
+      this.rafId = null
+    }
     for (const id of Array.from(this.runtimes.keys())) {
       this.removeRuntime(id)
     }
@@ -149,28 +161,41 @@ export class CanvasCompositor {
 
   private scheduleNext(): void {
     if (!this.running) return
-    const effectiveFps = this.previewLowPower ? Math.min(this.targetFps, 15) : this.targetFps
-    const intervalMs = 1000 / effectiveFps
-    const now = performance.now()
-    const elapsed = now - this.lastRenderMs
+    const tick = (now: number) => {
+      if (!this.running) return
+      const effectiveFps = this.previewLowPower ? Math.min(this.targetFps, 15) : this.targetFps
+      const intervalMs = 1000 / effectiveFps
+      const elapsed = now - this.lastRenderMs
 
-    if (elapsed > intervalMs * 2.2) {
-      this.droppedFrames += Math.floor(elapsed / intervalMs) - 1
+      if (elapsed >= intervalMs - 1.5 || this.lastRenderMs === 0) {
+        if (this.lastRenderMs > 0 && elapsed > intervalMs * 2.4) {
+          this.droppedFrames += Math.floor(elapsed / intervalMs) - 1
+        }
+        this.renderFrame(now)
+        this.lastRenderMs = now
+        this.frameCount++
+
+        if (now - this.lastStatsMs >= 1000) {
+          this.actualFps = Math.round((this.frameCount * 1000) / (now - this.lastStatsMs))
+          this.frameCount = 0
+          this.lastStatsMs = now
+        }
+      }
+
+      if (document.hidden) {
+        this.rafId = null
+        this.timerId = window.setTimeout(() => tick(performance.now()), Math.max(16, Math.round(intervalMs)))
+      } else {
+        this.timerId = null
+        this.rafId = window.requestAnimationFrame(tick)
+      }
     }
 
-    this.renderFrame(now)
-    this.lastRenderMs = now
-    this.frameCount++
-
-    if (now - this.lastStatsMs >= 1000) {
-      this.actualFps = Math.round((this.frameCount * 1000) / (now - this.lastStatsMs))
-      this.frameCount = 0
-      this.lastStatsMs = now
+    if (document.hidden) {
+      this.timerId = window.setTimeout(() => tick(performance.now()), 16)
+    } else {
+      this.rafId = window.requestAnimationFrame(tick)
     }
-
-    const spent = performance.now() - now
-    const delay = Math.max(4, Math.round(intervalMs - spent))
-    this.timerId = window.setTimeout(() => this.scheduleNext(), delay)
   }
 
   private renderFrame(nowMs: number): void {

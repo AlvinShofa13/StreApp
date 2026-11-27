@@ -71,7 +71,7 @@ export function buildAndroidWebBridgeUrl(info: AndroidHostPairing): string {
 }
 
 /** Mengatur batas bitrate & framerate pengirim WebRTC agar mulus, rendah latensi, dan anti-lag di Wi-Fi. */
-async function tuneVideoSender(pc: RTCPeerConnection): Promise<void> {
+async function tuneVideoSender(pc: RTCPeerConnection, maxBitrateBps = 1_600_000): Promise<void> {
   for (const sender of pc.getSenders()) {
     if (sender.track?.kind === 'video') {
       try {
@@ -82,7 +82,7 @@ async function tuneVideoSender(pc: RTCPeerConnection): Promise<void> {
         if (!params.encodings || params.encodings.length === 0) {
           params.encodings = [{}]
         }
-        params.encodings[0].maxBitrate = 2_500_000
+        params.encodings[0].maxBitrate = maxBitrateBps
         params.encodings[0].maxFramerate = 30
         ;(params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference =
           'maintain-framerate'
@@ -91,6 +91,22 @@ async function tuneVideoSender(pc: RTCPeerConnection): Promise<void> {
         // Beberapa browser mobile membatasi sebagian parameter; abaikan secara aman
       }
     }
+  }
+}
+
+/** Prioritaskan codec H.264 hardware agar encode di HP jauh lebih ringan dibanding VP8/VP9 software. */
+function preferHardwareH264(transceiver: RTCRtpTransceiver): void {
+  try {
+    if (typeof RTCRtpReceiver === 'undefined' || !RTCRtpReceiver.getCapabilities) return
+    const caps = RTCRtpReceiver.getCapabilities('video')
+    if (!caps || !caps.codecs || typeof transceiver.setCodecPreferences !== 'function') return
+    const h264 = caps.codecs.filter((c) => c.mimeType.toLowerCase() === 'video/h264')
+    const others = caps.codecs.filter((c) => c.mimeType.toLowerCase() !== 'video/h264')
+    if (h264.length > 0) {
+      transceiver.setCodecPreferences([...h264, ...others])
+    }
+  } catch {
+    // Abaikan jika browser tidak mengizinkan setCodecPreferences
   }
 }
 
@@ -104,6 +120,9 @@ export class WifiHostSession {
   private remoteStream: MediaStream | null = null
   private pendingIce: RTCIceCandidateInit[] = []
   private remoteDescSet = false
+  private negotiating = false
+  private lastOfferMs = 0
+  private notifiedStream: MediaStream | null = null
 
   onStatus?: (status: WifiPairingStatus, message?: string) => void
   onStream?: (stream: MediaStream, label: string) => void
@@ -129,16 +148,23 @@ export class WifiHostSession {
 
   private async handleSignal(msg: SignalEnvelope): Promise<void> {
     if (msg.type === 'ready') {
+      // Cegah reset berulang dari beacon ready yang datang saat koneksi sudah berjalan/tersambung
+      const st = this.pc?.connectionState
+      if (st === 'connected') return
+      if ((this.negotiating || st === 'connecting') && Date.now() - this.lastOfferMs < 5000) return
       await this.createPeerAndSendOffer(msg.name || 'Kamera HP (Wi-Fi)')
     } else if (msg.type === 'answer' && msg.sdp && this.pc) {
+      if (this.remoteDescSet) return
       try {
         await this.pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp })
         this.remoteDescSet = true
+        this.negotiating = false
         for (const c of this.pendingIce) {
           await this.pc.addIceCandidate(c).catch(() => {})
         }
         this.pendingIce = []
       } catch (e) {
+        this.negotiating = false
         this.onStatus?.('ERROR', e instanceof Error ? e.message : 'Gagal menerapkan Answer WebRTC.')
       }
     } else if (msg.type === 'ice' && msg.candidate) {
@@ -155,26 +181,43 @@ export class WifiHostSession {
 
   private async createPeerAndSendOffer(nodeLabel: string): Promise<void> {
     this.closePeerOnly()
+    this.negotiating = true
+    this.lastOfferMs = Date.now()
     this.onStatus?.('CONNECTING')
 
     const pc = new RTCPeerConnection(RTC_CONFIG)
     this.pc = pc
     this.remoteDescSet = false
     this.pendingIce = []
+    this.notifiedStream = null
 
-    pc.addTransceiver('video', { direction: 'recvonly' })
+    const videoTransceiver = pc.addTransceiver('video', { direction: 'recvonly' })
+    preferHardwareH264(videoTransceiver)
     pc.addTransceiver('audio', { direction: 'recvonly' })
 
     const incoming = new MediaStream()
     this.remoteStream = incoming
 
     pc.ontrack = (ev) => {
+      // Kurangi buffer jitter WebRTC agar video real-time tanpa delay/lag menumpuk
+      try {
+        const recv = ev.receiver as RTCRtpReceiver & {
+          playoutDelayHint?: number
+          jitterBufferTarget?: number
+        }
+        if ('playoutDelayHint' in recv) recv.playoutDelayHint = 0
+        if ('jitterBufferTarget' in recv) recv.jitterBufferTarget = 0
+      } catch {}
+
       const targetStream = ev.streams[0] ?? incoming
       if (!ev.streams[0]) {
         incoming.addTrack(ev.track)
       }
       this.remoteStream = targetStream
-      this.onStream?.(targetStream, nodeLabel)
+      if (this.notifiedStream !== targetStream || ev.track.kind === 'audio') {
+        this.notifiedStream = targetStream
+        this.onStream?.(targetStream, nodeLabel)
+      }
       this.onStatus?.('CONNECTED')
     }
 
@@ -187,15 +230,16 @@ export class WifiHostSession {
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState
       if (st === 'connected') {
+        this.negotiating = false
         this.onStatus?.('CONNECTED')
       } else if (st === 'disconnected') {
         this.onStatus?.('CONNECTING', 'Jaringan Wi-Fi sempat goyang, mencoba memulihkan…')
       } else if (st === 'failed') {
+        this.negotiating = false
         this.onStatus?.('WAITING_NODE', 'Koneksi terputus — menunggu kamera HP menyambung ulang otomatis…')
       }
     }
 
-    // SDP penuh (tanpa pemangkasan) -> mempertahankan seluruh rtcp-fb (NACK/PLI/FIR) anti-lag!
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
     if (pc.localDescription?.sdp) {
@@ -206,6 +250,8 @@ export class WifiHostSession {
   private closePeerOnly(): void {
     this.pendingIce = []
     this.remoteDescSet = false
+    this.negotiating = false
+    this.notifiedStream = null
     if (this.pc) {
       try { this.pc.close() } catch {}
       this.pc = null
@@ -237,13 +283,20 @@ export class WifiNodeSession {
   private readyTimer: number | null = null
   private offerReceived = false
   private deviceLabel = 'Kamera HP (Wi-Fi)'
+  private targetBitrateBps = 1_600_000
 
   onStatus?: (status: WifiPairingStatus, message?: string) => void
 
-  async connectToRoom(info: RoomPairingInfo, stream: MediaStream, label?: string): Promise<void> {
+  async connectToRoom(
+    info: RoomPairingInfo,
+    stream: MediaStream,
+    label?: string,
+    maxBitrateBps = 1_600_000,
+  ): Promise<void> {
     this.close()
     this.localStream = stream
     this.deviceLabel = label || 'Kamera HP (Wi-Fi)'
+    this.targetBitrateBps = maxBitrateBps
     this.offerReceived = false
     this.onStatus?.('CONNECTING', 'Menyambungkan otomatis ke StreApp Web Host…')
 
@@ -258,8 +311,9 @@ export class WifiNodeSession {
   }
 
   /** Ganti track kamera/orientasi secara mulus tanpa memutus koneksi WebRTC! */
-  async replaceStream(newStream: MediaStream): Promise<void> {
+  async replaceStream(newStream: MediaStream, maxBitrateBps?: number): Promise<void> {
     this.localStream = newStream
+    if (maxBitrateBps) this.targetBitrateBps = maxBitrateBps
     if (!this.pc) return
     const newVideo = newStream.getVideoTracks()[0]
     const newAudio = newStream.getAudioTracks()[0]
@@ -270,7 +324,7 @@ export class WifiNodeSession {
         await sender.replaceTrack(newAudio).catch(() => {})
       }
     }
-    await tuneVideoSender(this.pc)
+    await tuneVideoSender(this.pc, this.targetBitrateBps)
   }
 
   private startReadyBeacon(): void {
@@ -281,7 +335,7 @@ export class WifiNodeSession {
       }
     }
     sendReady()
-    this.readyTimer = window.setInterval(sendReady, 1200)
+    this.readyTimer = window.setInterval(sendReady, 2200)
   }
 
   private stopReadyBeacon(): void {
@@ -293,6 +347,7 @@ export class WifiNodeSession {
 
   private async handleSignal(msg: SignalEnvelope): Promise<void> {
     if (msg.type === 'offer' && msg.sdp && this.localStream) {
+      if (this.pc?.connectionState === 'connected') return
       this.offerReceived = true
       this.stopReadyBeacon()
       await this.acceptOfferAndSendAnswer(msg.sdp)
@@ -332,11 +387,10 @@ export class WifiNodeSession {
       const st = pc.connectionState
       if (st === 'connected') {
         this.onStatus?.('CONNECTED', 'Tersambung langsung (P2P Wi-Fi) ke StreApp Web!')
-        void tuneVideoSender(pc)
+        void tuneVideoSender(pc, this.targetBitrateBps)
       } else if (st === 'disconnected') {
         this.onStatus?.('CONNECTING', 'Jaringan goyang — menyambung ulang otomatis…')
       } else if (st === 'failed') {
-        // Otomatis minta negosiasi ulang ke Host tanpa scan ulang QR!
         this.offerReceived = false
         this.onStatus?.('CONNECTING', 'Menyambung ulang otomatis ke Host…')
         this.startReadyBeacon()
@@ -352,7 +406,7 @@ export class WifiNodeSession {
 
     const answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
-    await tuneVideoSender(pc)
+    await tuneVideoSender(pc, this.targetBitrateBps)
 
     if (pc.localDescription?.sdp) {
       await this.signal?.send({ type: 'answer', sdp: pc.localDescription.sdp })

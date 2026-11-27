@@ -453,6 +453,30 @@ export function useStudio() {
     saveProject()
   }
 
+  /**
+   * Membuat elemen <video> yang menempel ke DOM (1x1 px transparan) agar Chrome/Edge
+   * tidak mencekik decoder WebRTC/kamera ke 1-5 fps seperti pada elemen detached.
+   */
+  function createActiveHiddenVideo(stream: MediaStream): HTMLVideoElement {
+    const video = document.createElement('video')
+    video.srcObject = stream
+    video.muted = true
+    video.playsInline = true
+    video.autoplay = true
+    Object.assign(video.style, {
+      position: 'fixed',
+      right: '0',
+      bottom: '0',
+      width: '1px',
+      height: '1px',
+      opacity: '0.01',
+      pointerEvents: 'none',
+      zIndex: '-1',
+    })
+    document.body.appendChild(video)
+    return video
+  }
+
   async function attachWifiRemoteStream(stream: MediaStream, label: string): Promise<void> {
     const scene = activeScene.value
     if (!scene) return
@@ -478,26 +502,33 @@ export function useStudio() {
       saveProject()
     }
 
-    const video = document.createElement('video')
-    video.srcObject = stream
-    video.muted = true
-    video.playsInline = true
+    if (!id) return
+
+    // Hindari membuat elemen <video> ganda saat event ontrack kedua (audio) datang
+    const existingRt = compositor.getRuntime(id)
+    if (existingRt?.video && existingRt.stream === stream) {
+      sourceStatuses[id] = 'ACTIVE'
+      if (stream.getAudioTracks().length > 0) {
+        audioMixer.addStream(`audio-${id}`, 'Audio Kamera Wi-Fi', 'USB', stream, false)
+      }
+      return
+    }
+
+    const video = createActiveHiddenVideo(stream)
     try {
       await video.play()
     } catch {
       // Abaikan jika menunggu frame pertama
     }
 
-    if (id) {
-      compositor.setRuntime(id, { sourceId: id, video, stream })
-      sourceStatuses[id] = 'ACTIVE'
-      if (stream.getAudioTracks().length > 0) {
-        audioMixer.addStream(`audio-${id}`, 'Audio Kamera Wi-Fi', 'USB', stream, false)
-      }
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        if (id) sourceStatuses[id] = 'DISCONNECTED'
-      })
+    compositor.setRuntime(id, { sourceId: id, video, stream })
+    sourceStatuses[id] = 'ACTIVE'
+    if (stream.getAudioTracks().length > 0) {
+      audioMixer.addStream(`audio-${id}`, 'Audio Kamera Wi-Fi', 'USB', stream, false)
     }
+    stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      if (id) sourceStatuses[id] = 'DISCONNECTED'
+    })
   }
 
   async function startWifiHost(): Promise<void> {
