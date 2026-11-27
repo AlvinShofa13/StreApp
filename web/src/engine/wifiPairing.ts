@@ -1,24 +1,27 @@
 /**
- * Pairing Kamera Nirkabel via Wi-Fi (WebRTC P2P antar Web & Android + Jembatan LAN ke StreApp Mobile).
- * - Kompresi deflate-raw pada SDP agar ukuran QR Code ringkas dan cepat dipindai kamera ponsel.
- * - Mendukung pairing 2 arah:
- *   1) StreApp Mobile / Browser HP -> StreApp Web (Host WebRTC + QR Code)
- *   2) StreApp Web (Pengirim) -> StreApp Mobile Android Host (via QR streapp://pair + WebSocket LAN)
+ * Pairing Kamera Nirkabel via Wi-Fi (1x Pindai QR Langsung Tersambung — Tanpa Answer Manual):
+ * - QR super ringkas (`37x37`): `https://<domain>/?wifiNode=1#r=<roomId>&k=<kunciAES>`
+ * - Offer, Answer, dan Trickle ICE ditukar otomatis secara terenkripsi AES-GCM (< 1 detik),
+ *   lalu WebRTC berjalan P2P langsung di Wi-Fi lokal dengan full `rtcp-fb` (NACK/PLI/FIR),
+ *   pembatasan bitrate stabil (anti-lag), dan auto-reconnect.
+ * - Juga tetap mendukung arah balik: StreApp Web -> StreApp Android Host (Jembatan LAN port 45679).
  */
 
-export type WifiPairingStatus = 'IDLE' | 'PREPARING' | 'WAITING_ANSWER' | 'CONNECTING' | 'CONNECTED' | 'ERROR'
+import { EncryptedSignalChannel, generateRoomCredentials, type SignalEnvelope } from './signalingRelay'
+
+export type WifiPairingStatus = 'IDLE' | 'PREPARING' | 'WAITING_NODE' | 'CONNECTING' | 'CONNECTED' | 'ERROR'
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ],
+  iceCandidatePoolSize: 2,
 }
 
-interface SignalPayload {
-  t: 'offer' | 'answer'
-  s: string
-  n?: string
+export interface RoomPairingInfo {
+  roomId: string
+  keyB64: string
 }
 
 export interface AndroidHostPairing {
@@ -29,188 +32,19 @@ export interface AndroidHostPairing {
   hostId: string
 }
 
-function bytesToBase64Url(bytes: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i])
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function base64UrlToBytes(token: string): Uint8Array {
-  const padded = token.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((token.length + 3) % 4)
-  const binary = atob(padded)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return bytes
-}
-
-async function compressDeflateRaw(bytes: Uint8Array): Promise<Uint8Array | null> {
-  if (typeof CompressionStream === 'undefined') return null
+/** Parsing URL/QR sesi 1-scan (`https://.../?wifiNode=1#r=<room>&k=<key>` atau `r=<room>&k=<key>`). */
+export function parseRoomPairingUrl(raw: string): RoomPairingInfo | null {
+  const text = raw.trim()
+  const hashPart = text.includes('#') ? text.split('#')[1] : text.includes('?') ? text.split('?')[1] : text
   try {
-    const copy = new Uint8Array(bytes)
-    const stream = new Blob([copy]).stream().pipeThrough(new CompressionStream('deflate-raw'))
-    const buf = await new Response(stream).arrayBuffer()
-    return new Uint8Array(buf)
+    const params = new URLSearchParams(hashPart)
+    const roomId = params.get('r')?.trim()
+    const keyB64 = params.get('k')?.trim()
+    if (!roomId || !keyB64) return null
+    return { roomId, keyB64 }
   } catch {
     return null
   }
-}
-
-async function decompressDeflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
-  if (typeof DecompressionStream === 'undefined') {
-    throw new Error('Browser tidak mendukung DecompressionStream untuk kode terkompresi.')
-  }
-  const copy = new Uint8Array(bytes)
-  const stream = new Blob([copy]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
-  const buf = await new Response(stream).arrayBuffer()
-  return new Uint8Array(buf)
-}
-
-/**
- * Memangkas SDP WebRTC agar ukuran QR Code turun ~75% (dari ~157x157 menjadi ~69x69)
- * sambil mempertahankan seluruh parameter wajib DTLS/ICE, codec VP8/H.264/Opus, dan track msid/ssrc.
- */
-export function minifySdp(sdp: string): string {
-  const lines = sdp.replace(/\r\n/g, '\n').split('\n').filter(Boolean)
-  const out: string[] = []
-  let section: 'session' | 'video' | 'audio' | 'other' = 'session'
-  let sectionLines: string[] = []
-
-  const flushSection = () => {
-    if (section === 'session') {
-      for (const l of sectionLines) {
-        if (
-          l.startsWith('v=') ||
-          l.startsWith('o=') ||
-          l.startsWith('s=') ||
-          l.startsWith('t=') ||
-          l.startsWith('a=group:') ||
-          l.startsWith('a=msid-semantic:')
-        ) {
-          out.push(l)
-        }
-      }
-      return
-    }
-    if (section !== 'video' && section !== 'audio') return
-
-    const keepPts = new Set<string>()
-    let keptH264 = false
-    let keptVp8 = false
-    for (const l of sectionLines) {
-      const m = /^a=rtpmap:(\d+)\s+([^/\s]+)/i.exec(l)
-      if (!m) continue
-      const pt = m[1]
-      const codec = m[2].toUpperCase()
-      if (section === 'video') {
-        if (codec === 'VP8' && !keptVp8) {
-          keepPts.add(pt)
-          keptVp8 = true
-        } else if (codec === 'H264' && !keptH264) {
-          keepPts.add(pt)
-          keptH264 = true
-        }
-      } else if (section === 'audio' && codec === 'OPUS' && keepPts.size < 1) {
-        keepPts.add(pt)
-      }
-    }
-
-    let keptCandidates = 0
-    for (const l of sectionLines) {
-      if (l.startsWith('m=')) {
-        const parts = l.split(' ')
-        const header = parts.slice(0, 3)
-        const filtered = parts.slice(3).filter((pt) => keepPts.has(pt))
-        out.push([...header, ...(filtered.length > 0 ? filtered : parts.slice(3, 4))].join(' '))
-      } else if (
-        l.startsWith('c=') ||
-        l.startsWith('a=ice-ufrag:') ||
-        l.startsWith('a=ice-pwd:') ||
-        l.startsWith('a=ice-options:') ||
-        l.startsWith('a=fingerprint:') ||
-        l.startsWith('a=setup:') ||
-        l.startsWith('a=mid:') ||
-        l.startsWith('a=msid:') ||
-        l === 'a=recvonly' ||
-        l === 'a=sendonly' ||
-        l === 'a=sendrecv' ||
-        l === 'a=inactive' ||
-        l === 'a=rtcp-mux' ||
-        l === 'a=rtcp-rsize'
-      ) {
-        out.push(l)
-      } else if (l.startsWith('a=ssrc:')) {
-        if (l.includes(' cname:') || l.includes(' msid:')) {
-          out.push(l)
-        }
-      } else if (l.startsWith('a=rtpmap:') || l.startsWith('a=fmtp:')) {
-        const pt = l.split(':')[1]?.split(' ')[0]
-        if (pt && keepPts.has(pt)) out.push(l)
-      } else if (l.startsWith('a=candidate:')) {
-        const parts = l.split(' ')
-        const ip = parts[4] || ''
-        const isIpv6 = ip.includes(':')
-        if (keptCandidates < 4 && /\budp\b/i.test(l) && !isIpv6) {
-          out.push(l)
-          keptCandidates++
-        }
-      }
-    }
-  }
-
-  for (const l of lines) {
-    if (l.startsWith('m=')) {
-      flushSection()
-      sectionLines = [l]
-      section = l.startsWith('m=video') ? 'video' : l.startsWith('m=audio') ? 'audio' : 'other'
-    } else {
-      sectionLines.push(l)
-    }
-  }
-  flushSection()
-  return out.join('\r\n') + '\r\n'
-}
-
-async function encodeSignal(payload: SignalPayload): Promise<string> {
-  const slimPayload: SignalPayload = { ...payload, s: minifySdp(payload.s) }
-  const json = JSON.stringify(slimPayload)
-  const rawBytes = new TextEncoder().encode(json)
-  const compressed = await compressDeflateRaw(rawBytes)
-  if (compressed && compressed.length < rawBytes.length) {
-    return `z.${bytesToBase64Url(compressed)}`
-  }
-  return `r.${bytesToBase64Url(rawBytes)}`
-}
-
-async function decodeSignal(code: string): Promise<SignalPayload> {
-  const trimmed = code.trim()
-  const rawToken = trimmed.includes('#o=')
-    ? trimmed.split('#o=')[1].split('&')[0]
-    : trimmed.includes('#offer=')
-      ? trimmed.split('#offer=')[1].split('&')[0]
-      : trimmed.includes('#answer=')
-        ? trimmed.split('#answer=')[1].split('&')[0]
-        : trimmed
-
-  let jsonBytes: Uint8Array
-  if (rawToken.startsWith('z.')) {
-    jsonBytes = await decompressDeflateRaw(base64UrlToBytes(rawToken.slice(2)))
-  } else if (rawToken.startsWith('r.')) {
-    jsonBytes = base64UrlToBytes(rawToken.slice(2))
-  } else {
-    // Kompatibel mundur dengan format tanpa prefix
-    jsonBytes = base64UrlToBytes(rawToken)
-  }
-
-  const json = new TextDecoder().decode(jsonBytes)
-  const parsed = JSON.parse(json) as Partial<SignalPayload>
-  if ((parsed.t !== 'offer' && parsed.t !== 'answer') || typeof parsed.s !== 'string' || !parsed.s) {
-    throw new Error('Format kode pairing Wi-Fi tidak valid.')
-  }
-  return { t: parsed.t, s: parsed.s, n: parsed.n }
 }
 
 /** Mem-parse QR Code pairing dari StreApp Android Host (`streapp://pair?host=...&port=...&token=...&wport=45679`). */
@@ -236,170 +70,318 @@ export function buildAndroidWebBridgeUrl(info: AndroidHostPairing): string {
   return `http://${info.host}:${info.webPort}/?token=${encodeURIComponent(info.token)}`
 }
 
-function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = 1500): Promise<void> {
-  if (pc.iceGatheringState === 'complete') return Promise.resolve()
-  return new Promise((resolve) => {
-    let settled = false
-    const done = () => {
-      if (settled) return
-      settled = true
-      window.clearTimeout(timer)
-      pc.removeEventListener('icegatheringstatechange', onState)
-      resolve()
+/** Mengatur batas bitrate & framerate pengirim WebRTC agar mulus, rendah latensi, dan anti-lag di Wi-Fi. */
+async function tuneVideoSender(pc: RTCPeerConnection): Promise<void> {
+  for (const sender of pc.getSenders()) {
+    if (sender.track?.kind === 'video') {
+      try {
+        if ('contentHint' in sender.track) {
+          sender.track.contentHint = 'motion'
+        }
+        const params = sender.getParameters()
+        if (!params.encodings || params.encodings.length === 0) {
+          params.encodings = [{}]
+        }
+        params.encodings[0].maxBitrate = 2_500_000
+        params.encodings[0].maxFramerate = 30
+        ;(params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference =
+          'maintain-framerate'
+        await sender.setParameters(params)
+      } catch {
+        // Beberapa browser mobile membatasi sebagian parameter; abaikan secara aman
+      }
     }
-    const onState = () => {
-      if (pc.iceGatheringState === 'complete') done()
-    }
-    const timer = window.setTimeout(done, timeoutMs)
-    pc.addEventListener('icegatheringstatechange', onState)
-  })
+  }
 }
 
+/**
+ * Sesi Host di StreApp Web:
+ * Klik "Tampilkan QR" -> tampilkan QR kecil -> HP cukup pindai 1 kali -> otomatis tersambung!
+ */
 export class WifiHostSession {
   private pc: RTCPeerConnection | null = null
+  private signal: EncryptedSignalChannel | null = null
   private remoteStream: MediaStream | null = null
+  private pendingIce: RTCIceCandidateInit[] = []
+  private remoteDescSet = false
 
   onStatus?: (status: WifiPairingStatus, message?: string) => void
   onStream?: (stream: MediaStream, label: string) => void
 
-  async createOffer(): Promise<{ offerCode: string; shareUrl: string }> {
+  async startRoom(): Promise<{ roomId: string; shareUrl: string }> {
     this.close()
     this.onStatus?.('PREPARING')
 
+    const { roomId, keyB64 } = generateRoomCredentials()
+    const base = `${window.location.origin}${window.location.pathname}`
+    const shareUrl = `${base}?wifiNode=1#r=${roomId}&k=${keyB64}`
+
+    const channel = new EncryptedSignalChannel(roomId, keyB64, 'host')
+    this.signal = channel
+    channel.onMessage = (msg) => {
+      void this.handleSignal(msg)
+    }
+
+    await channel.connect()
+    this.onStatus?.('WAITING_NODE')
+    return { roomId, shareUrl }
+  }
+
+  private async handleSignal(msg: SignalEnvelope): Promise<void> {
+    if (msg.type === 'ready') {
+      await this.createPeerAndSendOffer(msg.name || 'Kamera HP (Wi-Fi)')
+    } else if (msg.type === 'answer' && msg.sdp && this.pc) {
+      try {
+        await this.pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp })
+        this.remoteDescSet = true
+        for (const c of this.pendingIce) {
+          await this.pc.addIceCandidate(c).catch(() => {})
+        }
+        this.pendingIce = []
+      } catch (e) {
+        this.onStatus?.('ERROR', e instanceof Error ? e.message : 'Gagal menerapkan Answer WebRTC.')
+      }
+    } else if (msg.type === 'ice' && msg.candidate) {
+      if (this.pc && this.remoteDescSet) {
+        await this.pc.addIceCandidate(msg.candidate).catch(() => {})
+      } else {
+        this.pendingIce.push(msg.candidate)
+      }
+    } else if (msg.type === 'bye') {
+      this.closePeerOnly()
+      this.onStatus?.('WAITING_NODE', 'Kamera HP terputus. Menunggu sambung ulang…')
+    }
+  }
+
+  private async createPeerAndSendOffer(nodeLabel: string): Promise<void> {
+    this.closePeerOnly()
+    this.onStatus?.('CONNECTING')
+
     const pc = new RTCPeerConnection(RTC_CONFIG)
     this.pc = pc
+    this.remoteDescSet = false
+    this.pendingIce = []
 
     pc.addTransceiver('video', { direction: 'recvonly' })
     pc.addTransceiver('audio', { direction: 'recvonly' })
 
-    const incomingStream = new MediaStream()
-    this.remoteStream = incomingStream
+    const incoming = new MediaStream()
+    this.remoteStream = incoming
 
     pc.ontrack = (ev) => {
-      const targetStream = ev.streams[0] ?? incomingStream
+      const targetStream = ev.streams[0] ?? incoming
       if (!ev.streams[0]) {
-        incomingStream.addTrack(ev.track)
+        incoming.addTrack(ev.track)
       }
       this.remoteStream = targetStream
-      this.onStream?.(targetStream, 'Kamera Wi-Fi')
+      this.onStream?.(targetStream, nodeLabel)
       this.onStatus?.('CONNECTED')
     }
 
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) {
+        void this.signal?.send({ type: 'ice', candidate: ev.candidate.toJSON() })
+      }
+    }
+
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState
       if (st === 'connected') {
         this.onStatus?.('CONNECTED')
-      } else if (st === 'failed' || st === 'disconnected') {
-        this.onStatus?.('ERROR', 'Koneksi kamera Wi-Fi terputus. Buat sesi baru untuk menyambung ulang.')
+      } else if (st === 'disconnected') {
+        this.onStatus?.('CONNECTING', 'Jaringan Wi-Fi sempat goyang, mencoba memulihkan…')
+      } else if (st === 'failed') {
+        this.onStatus?.('WAITING_NODE', 'Koneksi terputus — menunggu kamera HP menyambung ulang otomatis…')
       }
     }
 
+    // SDP penuh (tanpa pemangkasan) -> mempertahankan seluruh rtcp-fb (NACK/PLI/FIR) anti-lag!
     const offer = await pc.createOffer()
     await pc.setLocalDescription(offer)
-    await waitForIceGathering(pc, 1500)
-
-    const localSdp = pc.localDescription?.sdp
-    if (!localSdp) {
-      this.onStatus?.('ERROR', 'Gagal membuat SDP Offer WebRTC.')
-      throw new Error('Gagal membuat SDP Offer WebRTC.')
+    if (pc.localDescription?.sdp) {
+      await this.signal?.send({ type: 'offer', sdp: pc.localDescription.sdp })
     }
-
-    const offerCode = await encodeSignal({ t: 'offer', s: localSdp })
-    const base = `${window.location.origin}${window.location.pathname}`
-    const shareUrl = `${base}?wifiNode=1#o=${offerCode}`
-    this.onStatus?.('WAITING_ANSWER')
-    return { offerCode, shareUrl }
   }
 
-  async acceptAnswer(answerCode: string): Promise<void> {
-    if (!this.pc) throw new Error('Belum ada sesi Host Wi-Fi aktif.')
-    const parsed = await decodeSignal(answerCode)
-    if (parsed.t !== 'answer') {
-      throw new Error('Kode yang ditempel bukan Kode Answer dari HP Pengirim.')
+  private closePeerOnly(): void {
+    this.pendingIce = []
+    this.remoteDescSet = false
+    if (this.pc) {
+      try { this.pc.close() } catch {}
+      this.pc = null
     }
-    this.onStatus?.('CONNECTING')
-    await this.pc.setRemoteDescription({ type: 'answer', sdp: parsed.s })
   }
 
   close(): void {
+    void this.signal?.send({ type: 'bye' })
+    this.signal?.close()
+    this.signal = null
+    this.closePeerOnly()
     if (this.remoteStream) {
       this.remoteStream.getTracks().forEach((t) => t.stop())
       this.remoteStream = null
-    }
-    if (this.pc) {
-      try {
-        this.pc.close()
-      } catch {
-        // Abaikan
-      }
-      this.pc = null
-    }
-    this.onStatus?.('IDLE')
-  }
-}
-
-export class WifiNodeSession {
-  private pc: RTCPeerConnection | null = null
-
-  onStatus?: (status: WifiPairingStatus, message?: string) => void
-
-  async createAnswerFromOffer(offerCode: string, localStream: MediaStream): Promise<string> {
-    this.close()
-    this.onStatus?.('PREPARING')
-
-    const parsed = await decodeSignal(offerCode)
-    if (parsed.t !== 'offer') {
-      throw new Error('Kode yang dimasukkan bukan Kode Offer dari Host.')
-    }
-
-    const pc = new RTCPeerConnection(RTC_CONFIG)
-    this.pc = pc
-
-    localStream.getTracks().forEach((track) => {
-      pc.addTrack(track, localStream)
-    })
-
-    pc.onconnectionstatechange = () => {
-      const st = pc.connectionState
-      if (st === 'connected') {
-        this.onStatus?.('CONNECTED')
-      } else if (st === 'failed' || st === 'disconnected') {
-        this.onStatus?.('ERROR', 'Koneksi ke Host Wi-Fi terputus.')
-      }
-    }
-
-    await pc.setRemoteDescription({ type: 'offer', sdp: parsed.s })
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-    await waitForIceGathering(pc, 1500)
-
-    const localSdp = pc.localDescription?.sdp
-    if (!localSdp) {
-      this.onStatus?.('ERROR', 'Gagal membuat Kode Answer WebRTC.')
-      throw new Error('Gagal membuat Kode Answer WebRTC.')
-    }
-
-    this.onStatus?.('WAITING_ANSWER')
-    return encodeSignal({ t: 'answer', s: localSdp })
-  }
-
-  close(): void {
-    if (this.pc) {
-      try {
-        this.pc.close()
-      } catch {
-        // Abaikan
-      }
-      this.pc = null
     }
     this.onStatus?.('IDLE')
   }
 }
 
 /**
+ * Sesi Pengirim (HP B / Browser Mobile) — 1x Scan QR langsung terhubung otomatis + auto-reconnect!
+ */
+export class WifiNodeSession {
+  private pc: RTCPeerConnection | null = null
+  private signal: EncryptedSignalChannel | null = null
+  private localStream: MediaStream | null = null
+  private pendingIce: RTCIceCandidateInit[] = []
+  private remoteDescSet = false
+  private readyTimer: number | null = null
+  private offerReceived = false
+  private deviceLabel = 'Kamera HP (Wi-Fi)'
+
+  onStatus?: (status: WifiPairingStatus, message?: string) => void
+
+  async connectToRoom(info: RoomPairingInfo, stream: MediaStream, label?: string): Promise<void> {
+    this.close()
+    this.localStream = stream
+    this.deviceLabel = label || 'Kamera HP (Wi-Fi)'
+    this.offerReceived = false
+    this.onStatus?.('CONNECTING', 'Menyambungkan otomatis ke StreApp Web Host…')
+
+    const channel = new EncryptedSignalChannel(info.roomId, info.keyB64, 'node')
+    this.signal = channel
+    channel.onMessage = (msg) => {
+      void this.handleSignal(msg)
+    }
+
+    await channel.connect()
+    this.startReadyBeacon()
+  }
+
+  /** Ganti track kamera/orientasi secara mulus tanpa memutus koneksi WebRTC! */
+  async replaceStream(newStream: MediaStream): Promise<void> {
+    this.localStream = newStream
+    if (!this.pc) return
+    const newVideo = newStream.getVideoTracks()[0]
+    const newAudio = newStream.getAudioTracks()[0]
+    for (const sender of this.pc.getSenders()) {
+      if (sender.track?.kind === 'video' && newVideo) {
+        await sender.replaceTrack(newVideo).catch(() => {})
+      } else if (sender.track?.kind === 'audio' && newAudio) {
+        await sender.replaceTrack(newAudio).catch(() => {})
+      }
+    }
+    await tuneVideoSender(this.pc)
+  }
+
+  private startReadyBeacon(): void {
+    this.stopReadyBeacon()
+    const sendReady = () => {
+      if (!this.offerReceived) {
+        void this.signal?.send({ type: 'ready', name: this.deviceLabel })
+      }
+    }
+    sendReady()
+    this.readyTimer = window.setInterval(sendReady, 1200)
+  }
+
+  private stopReadyBeacon(): void {
+    if (this.readyTimer !== null) {
+      window.clearInterval(this.readyTimer)
+      this.readyTimer = null
+    }
+  }
+
+  private async handleSignal(msg: SignalEnvelope): Promise<void> {
+    if (msg.type === 'offer' && msg.sdp && this.localStream) {
+      this.offerReceived = true
+      this.stopReadyBeacon()
+      await this.acceptOfferAndSendAnswer(msg.sdp)
+    } else if (msg.type === 'ice' && msg.candidate) {
+      if (this.pc && this.remoteDescSet) {
+        await this.pc.addIceCandidate(msg.candidate).catch(() => {})
+      } else {
+        this.pendingIce.push(msg.candidate)
+      }
+    } else if (msg.type === 'bye') {
+      this.closePeerOnly()
+      this.onStatus?.('IDLE', 'Sesi ditutup oleh Host.')
+    }
+  }
+
+  private async acceptOfferAndSendAnswer(offerSdp: string): Promise<void> {
+    this.closePeerOnly()
+    const stream = this.localStream
+    if (!stream) return
+
+    const pc = new RTCPeerConnection(RTC_CONFIG)
+    this.pc = pc
+    this.remoteDescSet = false
+    this.pendingIce = []
+
+    stream.getTracks().forEach((track) => {
+      pc.addTrack(track, stream)
+    })
+
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) {
+        void this.signal?.send({ type: 'ice', candidate: ev.candidate.toJSON() })
+      }
+    }
+
+    pc.onconnectionstatechange = () => {
+      const st = pc.connectionState
+      if (st === 'connected') {
+        this.onStatus?.('CONNECTED', 'Tersambung langsung (P2P Wi-Fi) ke StreApp Web!')
+        void tuneVideoSender(pc)
+      } else if (st === 'disconnected') {
+        this.onStatus?.('CONNECTING', 'Jaringan goyang — menyambung ulang otomatis…')
+      } else if (st === 'failed') {
+        // Otomatis minta negosiasi ulang ke Host tanpa scan ulang QR!
+        this.offerReceived = false
+        this.onStatus?.('CONNECTING', 'Menyambung ulang otomatis ke Host…')
+        this.startReadyBeacon()
+      }
+    }
+
+    await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp })
+    this.remoteDescSet = true
+    for (const c of this.pendingIce) {
+      await pc.addIceCandidate(c).catch(() => {})
+    }
+    this.pendingIce = []
+
+    const answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+    await tuneVideoSender(pc)
+
+    if (pc.localDescription?.sdp) {
+      await this.signal?.send({ type: 'answer', sdp: pc.localDescription.sdp })
+    }
+  }
+
+  private closePeerOnly(): void {
+    this.pendingIce = []
+    this.remoteDescSet = false
+    if (this.pc) {
+      try { this.pc.close() } catch {}
+      this.pc = null
+    }
+  }
+
+  close(): void {
+    this.stopReadyBeacon()
+    void this.signal?.send({ type: 'bye' })
+    this.signal?.close()
+    this.signal = null
+    this.closePeerOnly()
+    this.offerReceived = false
+    this.onStatus?.('IDLE')
+  }
+}
+
+/**
  * Pengirim langsung dari Browser Web ke StreApp Android Host lewat WebSocket LAN
- * (`ws://<ip>:45679/ws?token=<token>`). Bekerja langsung di jaringan HTTP/LAN,
- * dan menyediakan tautan Jembatan LAN bawaan HP saat dibuka dari HTTPS (Vercel).
+ * (`ws://<ip>:45679/ws?token=<token>`).
  */
 export class AndroidLanWebSender {
   private ws: WebSocket | null = null

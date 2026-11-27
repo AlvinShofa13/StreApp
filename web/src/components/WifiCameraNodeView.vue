@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ArrowLeft, Camera, Check, Copy, ExternalLink, Maximize2, RefreshCw, ScanLine, Smartphone, Wifi, X } from 'lucide-vue-next'
+import { ArrowLeft, Camera, ExternalLink, RefreshCw, ScanLine, Smartphone, Wifi } from 'lucide-vue-next'
 import {
   AndroidLanWebSender,
   WifiNodeSession,
   buildAndroidWebBridgeUrl,
   parseAndroidPairingUri,
+  parseRoomPairingUrl,
   type AndroidHostPairing,
   type WifiPairingStatus,
 } from '../engine/wifiPairing'
-import { renderQrToDataUrl } from '../engine/qrCode'
 import QrScannerModal from './QrScannerModal.vue'
 
 const emit = defineEmits<{
@@ -21,13 +21,11 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const facingMode = ref<'environment' | 'user'>('environment')
 const portraitMode = ref(true)
 const sendAudio = ref(false)
-const offerInput = ref('')
-const answerCode = ref('')
+const linkInput = ref('')
+const activeRoomId = ref('')
 const status = ref<WifiPairingStatus>('IDLE')
 const statusMsg = ref('')
-const copied = ref(false)
 const showScanner = ref(false)
-const showLargeAnswerQr = ref(false)
 
 // Target StreApp Mobile (Android Host)
 const androidHostIp = ref('')
@@ -48,24 +46,6 @@ androidSender.onStatus = (st, msg) => {
   if (msg) statusMsg.value = msg
 }
 
-const answerQrDataUrl = computed(() => {
-  if (!answerCode.value) return ''
-  try {
-    return renderQrToDataUrl(answerCode.value, 560)
-  } catch {
-    return ''
-  }
-})
-
-const answerQrLargeDataUrl = computed(() => {
-  if (!answerCode.value) return ''
-  try {
-    return renderQrToDataUrl(answerCode.value, 760)
-  } catch {
-    return ''
-  }
-})
-
 const currentAndroidPairing = computed<AndroidHostPairing | null>(() => {
   const host = androidHostIp.value.trim()
   const token = androidToken.value.trim()
@@ -79,22 +59,30 @@ const androidBridgeUrl = computed(() =>
 )
 
 async function startLocalCamera(): Promise<void> {
-  stopLocalCamera()
+  const prevStream = localStream
   statusMsg.value = ''
   try {
     const videoConstraint: MediaTrackConstraints = {
       facingMode: { ideal: facingMode.value },
       width: { ideal: portraitMode.value ? 720 : 1280 },
       height: { ideal: portraitMode.value ? 1280 : 720 },
-      frameRate: { ideal: 30 },
+      frameRate: { ideal: 30, max: 30 },
     }
-    localStream = await navigator.mediaDevices.getUserMedia({
+    const nextStream = await navigator.mediaDevices.getUserMedia({
       video: videoConstraint,
       audio: sendAudio.value,
     })
+    localStream = nextStream
     if (videoRef.value) {
-      videoRef.value.srcObject = localStream
+      videoRef.value.srcObject = nextStream
       await videoRef.value.play()
+    }
+    // Ganti track secara mulus tanpa memutus koneksi WebRTC yang sudah aktif!
+    if (status.value === 'CONNECTED' || status.value === 'CONNECTING') {
+      await nodeSession.replaceStream(nextStream)
+    }
+    if (prevStream) {
+      prevStream.getTracks().forEach((t) => t.stop())
     }
   } catch (e) {
     statusMsg.value = e instanceof Error ? `Gagal membuka kamera: ${e.message}` : 'Gagal membuka kamera.'
@@ -122,21 +110,25 @@ async function setOrientation(portrait: boolean): Promise<void> {
   await startLocalCamera()
 }
 
-async function generateAnswer(): Promise<void> {
-  if (!offerInput.value.trim()) {
-    statusMsg.value = 'Pindai QR atau tempel Kode Offer dari Host terlebih dahulu.'
+async function connectToWebHost(rawUrlOrCode?: string): Promise<void> {
+  const source = (rawUrlOrCode ?? linkInput.value).trim()
+  const room = parseRoomPairingUrl(source)
+  if (!room) {
+    status.value = 'ERROR'
+    statusMsg.value = 'QR atau tautan sesi tidak dikenali. Pindai ulang QR di layar StreApp Web.'
     return
   }
   if (!localStream) {
     await startLocalCamera()
   }
   if (!localStream) return
-  statusMsg.value = ''
+  activeRoomId.value = room.roomId
+  statusMsg.value = `Menyambungkan otomatis ke sesi ${room.roomId}…`
   try {
-    answerCode.value = await nodeSession.createAnswerFromOffer(offerInput.value, localStream)
+    await nodeSession.connectToRoom(room, localStream, 'Kamera HP (Wi-Fi)')
   } catch (e) {
     status.value = 'ERROR'
-    statusMsg.value = e instanceof Error ? e.message : 'Gagal membuat Kode Answer.'
+    statusMsg.value = e instanceof Error ? e.message : 'Gagal menyambungkan ke Host Web.'
   }
 }
 
@@ -171,35 +163,25 @@ async function onQrScanned(raw: string): Promise<void> {
     return
   }
   targetMode.value = 'WEB_HOST'
-  offerInput.value = raw.trim()
-  await generateAnswer()
-}
-
-async function copyAnswer(): Promise<void> {
-  if (!answerCode.value) return
-  try {
-    await navigator.clipboard.writeText(answerCode.value)
-    copied.value = true
-    window.setTimeout(() => { copied.value = false }, 2000)
-  } catch {
-    statusMsg.value = 'Salin kode dari kotak di bawah secara manual.'
-  }
+  linkInput.value = raw.trim()
+  await connectToWebHost(raw)
 }
 
 function disconnect(): void {
   nodeSession.close()
   androidSender.stop()
-  answerCode.value = ''
+  activeRoomId.value = ''
   statusMsg.value = ''
 }
 
 onMounted(async () => {
   await startLocalCamera()
-  // Jika dibuka dari scan QR StreApp Web (?wifiNode=1#o=... atau #offer=...), otomatis buat QR Answer!
-  if (window.location.hash.includes('o=') || window.location.hash.includes('offer=')) {
+  // Jika dibuka langsung dari hasil scan QR StreApp Web (?wifiNode=1#r=...&k=...), OTOMATIS TERSAMBUNG!
+  const parsed = parseRoomPairingUrl(window.location.href)
+  if (parsed) {
     targetMode.value = 'WEB_HOST'
-    offerInput.value = window.location.href
-    await generateAnswer()
+    linkInput.value = window.location.href
+    await connectToWebHost(window.location.href)
   }
 })
 
@@ -229,18 +211,22 @@ onBeforeUnmount(() => {
           {{
             status === 'CONNECTED'
               ? 'Tersambung'
-              : status === 'WAITING_ANSWER'
-                ? 'Tampilkan QR Answer'
-                : status === 'PREPARING' || status === 'CONNECTING'
-                  ? 'Menyambungkan…'
-                  : 'Siaga'
+              : status === 'CONNECTING' || status === 'PREPARING'
+                ? 'Menyambungkan…'
+                : 'Siaga'
           }}
         </span>
       </span>
     </header>
 
     <main class="node-body">
-      <div v-if="statusMsg" class="alert alert-warning">{{ statusMsg }}</div>
+      <div
+        v-if="statusMsg"
+        class="alert"
+        :class="status === 'CONNECTED' ? 'alert-success' : status === 'ERROR' ? 'alert-error' : 'alert-info'"
+      >
+        {{ statusMsg }}
+      </div>
 
       <div class="card">
         <div class="preview-frame" :class="{ portrait: portraitMode }">
@@ -265,7 +251,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <!-- Pemilih Tujuan: StreApp Web Host vs StreApp Mobile Android Host -->
       <div class="card col-gap">
         <div class="chip-group">
           <button
@@ -293,49 +278,32 @@ onBeforeUnmount(() => {
           <span>Pindai QR Host (Web atau Android)</span>
         </button>
 
-        <!-- Mode A: Sambung ke StreApp Web (WebRTC) -->
+        <!-- Mode A: Sambung Otomatis ke StreApp Web (1x Scan QR) -->
         <template v-if="targetMode === 'WEB_HOST'">
           <div class="row-gap">
             <Camera :size="16" color="#3D6FA5" />
-            <h3 class="card-title">Kirim ke StreApp Web (Wi-Fi WebRTC)</h3>
+            <h3 class="card-title">
+              {{ activeRoomId ? `Sesi Aktif: ${activeRoomId}` : 'Kirim Kamera ke StreApp Web' }}
+            </h3>
           </div>
           <p class="hint-text">
-            Pindai QR di layar StreApp Web (atau tempel Kode Offer), lalu arahkan <strong>QR Answer</strong> di bawah ke pemindai Host Web.
+            Pindai QR di layar StreApp Web (atau tempel tautan sesi di bawah) — kamera otomatis tersambung langsung tanpa kode balasan.
           </p>
 
-          <textarea
-            v-model="offerInput"
-            class="input code-box"
-            rows="2"
-            placeholder="Tempel Kode Offer atau tautan dari StreApp Web di sini…"
-          ></textarea>
+          <input
+            v-model="linkInput"
+            class="input"
+            placeholder="Atau tempel tautan sesi dari StreApp Web di sini…"
+          />
 
           <div class="row-gap">
-            <button class="btn btn-primary" style="flex: 1" type="button" @click="generateAnswer">
-              Buat QR &amp; Kode Answer
+            <button class="btn btn-primary" style="flex: 1" type="button" @click="connectToWebHost()">
+              Sambungkan Sekarang
             </button>
             <button v-if="status !== 'IDLE'" class="btn btn-sm" type="button" @click="disconnect">
               Putus
             </button>
           </div>
-
-          <template v-if="answerCode">
-            <div class="section-label">QR Code Answer (Pindai dari StreApp Web Host)</div>
-            <div v-if="answerQrDataUrl" class="qr-box">
-              <img :src="answerQrDataUrl" alt="QR Answer" class="qr-img" />
-              <button class="btn btn-sm btn-accent-outline" type="button" @click="showLargeAnswerQr = true">
-                <Maximize2 :size="13" />
-                <span>Perbesar QR Answer</span>
-              </button>
-            </div>
-
-            <textarea :value="answerCode" class="input code-box" rows="2" readonly></textarea>
-            <button class="btn btn-sm" type="button" @click="copyAnswer">
-              <Check v-if="copied" :size="14" />
-              <Copy v-else :size="14" />
-              <span>{{ copied ? 'Kode Answer Tersalin' : 'Salin Kode Answer' }}</span>
-            </button>
-          </template>
         </template>
 
         <!-- Mode B: Sambung ke StreApp Mobile (Android Host) -->
@@ -391,18 +359,6 @@ onBeforeUnmount(() => {
       @scanned="onQrScanned"
       @close="showScanner = false"
     />
-
-    <div v-if="showLargeAnswerQr && answerQrLargeDataUrl" class="modal-backdrop" @click.self="showLargeAnswerQr = false">
-      <div class="modal-card" style="max-width: 440px; text-align: center">
-        <div class="modal-header">
-          <h3 class="modal-title">QR Code Answer</h3>
-          <button class="btn btn-icon btn-sm" type="button" @click="showLargeAnswerQr = false">
-            <X :size="15" />
-          </button>
-        </div>
-        <img :src="answerQrLargeDataUrl" alt="QR Answer Besar" class="qr-img-large" />
-      </div>
-    </div>
   </div>
 </template>
 
@@ -439,39 +395,5 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.code-box {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  resize: vertical;
-}
-
-.qr-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 16px;
-  background: #ffffff;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.qr-img {
-  width: 260px;
-  max-width: 100%;
-  height: auto;
-  image-rendering: pixelated;
-  border-radius: 8px;
-}
-
-.qr-img-large {
-  width: 380px;
-  max-width: 100%;
-  height: auto;
-  image-rendering: pixelated;
-  border-radius: 10px;
-  border: 1px solid var(--border);
 }
 </style>

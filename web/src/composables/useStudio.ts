@@ -81,17 +81,21 @@ export function useStudio() {
   const chatFilterBots = ref(false)
   const chatFilterCommands = ref(true)
 
-  // Wi-Fi Camera Pairing (WebRTC P2P Host)
+  // Wi-Fi Camera Pairing (WebRTC P2P Host — 1x Pindai QR Otomatis)
   const wifiHost = new WifiHostSession()
   const wifiHostStatus = ref<WifiPairingStatus>('IDLE')
-  const wifiOfferCode = ref('')
+  const wifiRoomId = ref('')
   const wifiShareUrl = ref('')
   const wifiError = ref<string | null>(null)
   let activeWifiSourceId: string | null = null
 
   wifiHost.onStatus = (st, msg) => {
     wifiHostStatus.value = st
-    if (msg) wifiError.value = msg
+    if (st === 'ERROR' || st === 'CONNECTING' || st === 'WAITING_NODE') {
+      wifiError.value = msg ?? null
+    } else if (st === 'CONNECTED') {
+      wifiError.value = null
+    }
   }
 
   wifiHost.onStream = (stream, label) => {
@@ -499,8 +503,8 @@ export function useStudio() {
   async function startWifiHost(): Promise<void> {
     wifiError.value = null
     try {
-      const { offerCode, shareUrl } = await wifiHost.createOffer()
-      wifiOfferCode.value = offerCode
+      const { roomId, shareUrl } = await wifiHost.startRoom()
+      wifiRoomId.value = roomId
       wifiShareUrl.value = shareUrl
     } catch (e) {
       wifiHostStatus.value = 'ERROR'
@@ -508,18 +512,9 @@ export function useStudio() {
     }
   }
 
-  async function acceptWifiAnswer(answerCode: string): Promise<void> {
-    wifiError.value = null
-    try {
-      await wifiHost.acceptAnswer(answerCode)
-    } catch (e) {
-      wifiError.value = e instanceof Error ? e.message : 'Kode Answer tidak valid.'
-    }
-  }
-
   function stopWifiHost(): void {
     wifiHost.close()
-    wifiOfferCode.value = ''
+    wifiRoomId.value = ''
     wifiShareUrl.value = ''
     wifiError.value = null
     if (activeWifiSourceId) {
@@ -942,11 +937,10 @@ export function useStudio() {
     addVideoOverlay,
     addTestPattern,
     wifiHostStatus,
-    wifiOfferCode,
+    wifiRoomId,
     wifiShareUrl,
     wifiError,
     startWifiHost,
-    acceptWifiAnswer,
     stopWifiHost,
     updateSourceTransform,
     setSourceVisible,

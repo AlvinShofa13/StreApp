@@ -32,7 +32,7 @@ const isWifiNodeMode = ref(
 function openWifiPairingInSettings(): void {
   activeTab.value = 'SETTINGS'
   showDock.value = true
-  if (!studio.wifiOfferCode.value) {
+  if (!studio.wifiShareUrl.value) {
     void studio.startWifiHost()
   }
 }
@@ -289,7 +289,7 @@ const loadBadgeText = computed(() => {
           :selected-screen-id="studio.selectedScreenId.value"
           :supports-multi-screen-api="studio.supportsMultiScreenApi"
           :wifi-host-status="studio.wifiHostStatus.value"
-          :wifi-offer-code="studio.wifiOfferCode.value"
+          :wifi-room-id="studio.wifiRoomId.value"
           :wifi-share-url="studio.wifiShareUrl.value"
           :wifi-error="studio.wifiError.value"
           @set-preset="studio.setPreset"
@@ -301,7 +301,6 @@ const loadBadgeText = computed(() => {
           @select-screen="studio.selectedScreenId.value = $event"
           @open-projector="studio.openProjectorOnSelectedScreen"
           @start-wifi-host="studio.startWifiHost"
-          @accept-wifi-answer="studio.acceptWifiAnswer"
           @stop-wifi-host="studio.stopWifiHost"
           @open-wifi-node-mode="isWifiNodeMode = true"
           @export-project="studio.exportProjectJson"

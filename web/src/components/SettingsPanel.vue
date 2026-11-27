@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Check, Copy, Download, Maximize2, Monitor, QrCode, RefreshCw, ScanLine, Smartphone, Upload, Wifi, X } from 'lucide-vue-next'
+import { Check, Copy, Download, Maximize2, Monitor, QrCode, RefreshCw, Smartphone, Upload, Wifi, X } from 'lucide-vue-next'
 import {
   PRESETS,
   RESOLUTIONS,
@@ -12,7 +12,6 @@ import {
 import type { LoadEstimate } from '../engine/loadEstimator'
 import type { WifiPairingStatus } from '../engine/wifiPairing'
 import { renderQrToDataUrl } from '../engine/qrCode'
-import QrScannerModal from './QrScannerModal.vue'
 
 const props = defineProps<{
   project: Project
@@ -23,7 +22,7 @@ const props = defineProps<{
   selectedScreenId: string
   supportsMultiScreenApi: boolean
   wifiHostStatus: WifiPairingStatus
-  wifiOfferCode: string
+  wifiRoomId: string
   wifiShareUrl: string
   wifiError: string | null
 }>()
@@ -38,7 +37,6 @@ const emit = defineEmits<{
   (e: 'select-screen', id: string): void
   (e: 'open-projector'): void
   (e: 'start-wifi-host'): void
-  (e: 'accept-wifi-answer', code: string): void
   (e: 'stop-wifi-host'): void
   (e: 'open-wifi-node-mode'): void
   (e: 'export-project'): void
@@ -46,16 +44,13 @@ const emit = defineEmits<{
 }>()
 
 const importInputRef = ref<HTMLInputElement | null>(null)
-const answerInput = ref('')
-const copiedOffer = ref(false)
 const copiedLink = ref(false)
 const showLargeQr = ref(false)
-const showScanAnswer = ref(false)
 
 const offerQrDataUrl = computed(() => {
   if (!props.wifiShareUrl) return ''
   try {
-    return renderQrToDataUrl(props.wifiShareUrl, 560)
+    return renderQrToDataUrl(props.wifiShareUrl, 480)
   } catch {
     return ''
   }
@@ -64,37 +59,21 @@ const offerQrDataUrl = computed(() => {
 const offerQrLargeDataUrl = computed(() => {
   if (!props.wifiShareUrl) return ''
   try {
-    return renderQrToDataUrl(props.wifiShareUrl, 760)
+    return renderQrToDataUrl(props.wifiShareUrl, 640)
   } catch {
     return ''
   }
 })
 
-function onAnswerQrScanned(raw: string): void {
-  showScanAnswer.value = false
-  answerInput.value = raw.trim()
-  emit('accept-wifi-answer', raw.trim())
-}
-
-async function copyText(text: string, which: 'offer' | 'link'): Promise<void> {
-  if (!text) return
+async function copyShareLink(): Promise<void> {
+  if (!props.wifiShareUrl) return
   try {
-    await navigator.clipboard.writeText(text)
-    if (which === 'offer') {
-      copiedOffer.value = true
-      window.setTimeout(() => { copiedOffer.value = false }, 2000)
-    } else {
-      copiedLink.value = true
-      window.setTimeout(() => { copiedLink.value = false }, 2000)
-    }
+    await navigator.clipboard.writeText(props.wifiShareUrl)
+    copiedLink.value = true
+    window.setTimeout(() => { copiedLink.value = false }, 2000)
   } catch {
     // Abaikan jika browser memblokir clipboard
   }
-}
-
-function submitWifiAnswer(): void {
-  if (!answerInput.value.trim()) return
-  emit('accept-wifi-answer', answerInput.value.trim())
 }
 
 function onImportFile(ev: Event): void {
@@ -285,8 +264,8 @@ function loadAlertClass(): string {
           {{
             wifiHostStatus === 'CONNECTED'
               ? 'Tersambung'
-              : wifiHostStatus === 'WAITING_ANSWER'
-                ? 'Menunggu Answer'
+              : wifiHostStatus === 'WAITING_NODE'
+                ? 'Menunggu Pindai QR'
                 : wifiHostStatus === 'CONNECTING' || wifiHostStatus === 'PREPARING'
                   ? 'Menyambungkan…'
                   : 'Siaga'
@@ -295,12 +274,14 @@ function loadAlertClass(): string {
       </div>
 
       <p class="hint-text">
-        Sambungkan kamera HP atau perangkat lain lewat Wi-Fi yang sama secara Peer-to-Peer (selain kabel USB).
+        Cukup <strong>1 kali pindai QR</strong> dari aplikasi StreApp Mobile atau kamera HP — kamera otomatis tersambung langsung lewat Wi-Fi tanpa perlu menyalin kode balik.
       </p>
 
-      <div v-if="wifiError" class="alert alert-error">{{ wifiError }}</div>
+      <div v-if="wifiError" class="alert" :class="wifiHostStatus === 'ERROR' ? 'alert-error' : 'alert-info'">
+        {{ wifiError }}
+      </div>
 
-      <div v-if="!wifiOfferCode" class="row-gap">
+      <div v-if="!wifiShareUrl" class="row-gap">
         <button class="btn btn-accent-outline btn-sm" style="flex: 1" type="button" @click="emit('start-wifi-host')">
           <QrCode :size="14" />
           <span>Tampilkan QR (Host Wi-Fi)</span>
@@ -312,9 +293,11 @@ function loadAlertClass(): string {
       </div>
 
       <template v-else>
-        <div class="section-label">1. Pindai QR dari Aplikasi StreApp Mobile / Browser HP</div>
         <div v-if="offerQrDataUrl" class="qr-box">
           <img :src="offerQrDataUrl" alt="QR Pairing StreApp Web Host" class="qr-img" />
+          <div style="font-size: 12px; font-weight: 700; color: var(--text)">
+            Kode Sesi: {{ wifiRoomId }}
+          </div>
           <button class="btn btn-sm btn-accent-outline" type="button" @click="showLargeQr = true">
             <Maximize2 :size="13" />
             <span>Perbesar QR</span>
@@ -322,37 +305,12 @@ function loadAlertClass(): string {
         </div>
 
         <div class="row-gap">
-          <button class="btn btn-sm" style="flex: 1" type="button" @click="copyText(wifiShareUrl, 'link')">
+          <button class="btn btn-sm" style="flex: 1" type="button" @click="copyShareLink">
             <Check v-if="copiedLink" :size="13" />
             <Copy v-else :size="13" />
             <span>{{ copiedLink ? 'Tautan Tersalin' : 'Salin Tautan Pengirim' }}</span>
           </button>
-          <button class="btn btn-sm" style="flex: 1" type="button" @click="copyText(wifiOfferCode, 'offer')">
-            <Check v-if="copiedOffer" :size="13" />
-            <Copy v-else :size="13" />
-            <span>{{ copiedOffer ? 'Kode Tersalin' : 'Salin Kode Offer' }}</span>
-          </button>
-        </div>
-
-        <div class="section-label">2. Pindai QR Answer atau Tempel Kode dari HP</div>
-        <div class="row-gap">
-          <button class="btn btn-accent-outline btn-sm" style="width: 100%" type="button" @click="showScanAnswer = true">
-            <ScanLine :size="14" />
-            <span>Pindai QR Answer dari Layar HP</span>
-          </button>
-        </div>
-        <textarea
-          v-model="answerInput"
-          class="input"
-          rows="2"
-          placeholder="Atau tempel Kode Answer dari HP di sini…"
-          style="font-size: 11px"
-        ></textarea>
-        <div class="row-gap">
-          <button class="btn btn-primary btn-sm" style="flex: 1" type="button" @click="submitWifiAnswer">
-            Sambungkan Kamera Wi-Fi
-          </button>
-          <button class="btn btn-sm" type="button" @click="answerInput = ''; emit('stop-wifi-host')">
+          <button class="btn btn-sm" type="button" @click="emit('stop-wifi-host')">
             Tutup Sesi
           </button>
         </div>
@@ -362,24 +320,17 @@ function loadAlertClass(): string {
       <div v-if="showLargeQr && offerQrLargeDataUrl" class="modal-backdrop" @click.self="showLargeQr = false">
         <div class="modal-card" style="max-width: 440px; text-align: center">
           <div class="modal-header">
-            <h3 class="modal-title">QR Pairing Host (StreApp Web)</h3>
+            <h3 class="modal-title">Pindai QR — Sesi {{ wifiRoomId }}</h3>
             <button class="btn btn-icon btn-sm" type="button" @click="showLargeQr = false">
               <X :size="15" />
             </button>
           </div>
           <p class="hint-text" style="margin-bottom: 10px">
-            Pindai menggunakan aplikasi <strong>StreApp Android (Pindai QR)</strong> atau kamera HP pada Wi-Fi yang sama.
+            Pindai sekali saja pakai <strong>StreApp Android (Pindai QR)</strong> atau kamera HP — kamera langsung masuk ke kanvas secara otomatis.
           </p>
           <img :src="offerQrLargeDataUrl" alt="QR Pairing Besar" class="qr-img-large" />
         </div>
       </div>
-
-      <QrScannerModal
-        v-if="showScanAnswer"
-        title="Pindai QR Answer dari HP"
-        @scanned="onAnswerQrScanned"
-        @close="showScanAnswer = false"
-      />
     </div>
 
     <!-- Ekspor / Impor Proyek JSON (Tanpa Database) -->
