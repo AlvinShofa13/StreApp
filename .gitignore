@@ -1,17 +1,31 @@
+# Android & Gradle
 *.iml
+.gradle/
 .gradle
-/local.properties
+local.properties
+.idea/
 .idea
 .DS_Store
-/build
 build/
 .kotlin/
-/captures
-.externalNativeBuild
-.cxx
+captures/
+.externalNativeBuild/
+.cxx/
 buildlog.txt
 dbglog.txt
 infolog.txt
 dist/
 *.jks
 *.keystore
+
+# Web (Vue + Vite)
+web/node_modules/
+web/dist/
+web/.vercel/
+
+# Promo & Environment
+promo-motion-graphic/output/*.mp4
+promo-motion-graphic/output/*.webm
+.env
+.env.local
+.env.*.local

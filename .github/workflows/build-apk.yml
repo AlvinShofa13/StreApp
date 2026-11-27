@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Tag rilis yang akan dipublikasikan ke Releases (contoh: v1.1.1)"
+        description: "Tag rilis yang akan dipublikasikan ke Releases (contoh: v1.1.8)"
         required: false
-        default: "v1.1.1"
+        default: "v1.1.8"
 
 permissions:
   contents: write
@@ -38,14 +38,19 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: mobile
 
       - name: Grant execute permission for gradlew
+        working-directory: mobile
         run: chmod +x gradlew
 
       - name: Run unit tests
+        working-directory: mobile
         run: ./gradlew test
 
       - name: Build Debug APK
+        working-directory: mobile
         run: ./gradlew assembleDebug
 
       - name: Determine release tag
@@ -65,7 +70,7 @@ jobs:
       - name: Prepare APK artifact
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/StreApp-android.apk
+          cp mobile/app/build/outputs/apk/debug/app-debug.apk dist/StreApp-android.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
