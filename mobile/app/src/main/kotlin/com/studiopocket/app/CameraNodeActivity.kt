@@ -145,7 +145,7 @@ class CameraNodeActivity : ComponentActivity() {
         val raw = result.contents ?: return@registerForActivityResult
         // 1. Jika QR berasal dari StreApp Web (Host WebRTC), buka jembatan WebView bawaan
         if ((raw.startsWith("http://") || raw.startsWith("https://")) &&
-            (raw.contains("wifiNode=1") || raw.contains("#offer="))
+            (raw.contains("wifiNode=1") || raw.contains("#o=") || raw.contains("#offer="))
         ) {
             cameraSource?.stop()
             startActivity(

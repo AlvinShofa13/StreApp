@@ -51,7 +51,7 @@ androidSender.onStatus = (st, msg) => {
 const answerQrDataUrl = computed(() => {
   if (!answerCode.value) return ''
   try {
-    return renderQrToDataUrl(answerCode.value, 340)
+    return renderQrToDataUrl(answerCode.value, 560)
   } catch {
     return ''
   }
@@ -60,7 +60,7 @@ const answerQrDataUrl = computed(() => {
 const answerQrLargeDataUrl = computed(() => {
   if (!answerCode.value) return ''
   try {
-    return renderQrToDataUrl(answerCode.value, 480)
+    return renderQrToDataUrl(answerCode.value, 760)
   } catch {
     return ''
   }
@@ -195,8 +195,8 @@ function disconnect(): void {
 
 onMounted(async () => {
   await startLocalCamera()
-  // Jika dibuka dari scan QR StreApp Web (?wifiNode=1#offer=...), otomatis buat QR Answer!
-  if (window.location.hash.includes('offer=')) {
+  // Jika dibuka dari scan QR StreApp Web (?wifiNode=1#o=... atau #offer=...), otomatis buat QR Answer!
+  if (window.location.hash.includes('o=') || window.location.hash.includes('offer=')) {
     targetMode.value = 'WEB_HOST'
     offerInput.value = window.location.href
     await generateAnswer()
@@ -451,22 +451,23 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 16px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 12px;
 }
 
 .qr-img {
-  width: 220px;
-  height: 220px;
+  width: 260px;
+  max-width: 100%;
+  height: auto;
   image-rendering: pixelated;
   border-radius: 8px;
 }
 
 .qr-img-large {
-  width: 340px;
+  width: 380px;
   max-width: 100%;
   height: auto;
   image-rendering: pixelated;

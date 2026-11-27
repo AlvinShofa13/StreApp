@@ -55,7 +55,7 @@ const showScanAnswer = ref(false)
 const offerQrDataUrl = computed(() => {
   if (!props.wifiShareUrl) return ''
   try {
-    return renderQrToDataUrl(props.wifiShareUrl, 340)
+    return renderQrToDataUrl(props.wifiShareUrl, 560)
   } catch {
     return ''
   }
@@ -64,7 +64,7 @@ const offerQrDataUrl = computed(() => {
 const offerQrLargeDataUrl = computed(() => {
   if (!props.wifiShareUrl) return ''
   try {
-    return renderQrToDataUrl(props.wifiShareUrl, 480)
+    return renderQrToDataUrl(props.wifiShareUrl, 760)
   } catch {
     return ''
   }
@@ -445,22 +445,23 @@ function loadAlertClass(): string {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 16px;
   background: #ffffff;
   border: 1px solid var(--border);
   border-radius: 12px;
 }
 
 .qr-img {
-  width: 210px;
-  height: 210px;
+  width: 260px;
+  max-width: 100%;
+  height: auto;
   image-rendering: pixelated;
   border-radius: 8px;
 }
 
 .qr-img-large {
-  width: 340px;
+  width: 380px;
   max-width: 100%;
   height: auto;
   image-rendering: pixelated;

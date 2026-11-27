@@ -69,8 +69,114 @@ async function decompressDeflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(buf)
 }
 
+/**
+ * Memangkas SDP WebRTC agar ukuran QR Code turun ~75% (dari ~157x157 menjadi ~69x69)
+ * sambil mempertahankan seluruh parameter wajib DTLS/ICE, codec VP8/H.264/Opus, dan track msid/ssrc.
+ */
+export function minifySdp(sdp: string): string {
+  const lines = sdp.replace(/\r\n/g, '\n').split('\n').filter(Boolean)
+  const out: string[] = []
+  let section: 'session' | 'video' | 'audio' | 'other' = 'session'
+  let sectionLines: string[] = []
+
+  const flushSection = () => {
+    if (section === 'session') {
+      for (const l of sectionLines) {
+        if (
+          l.startsWith('v=') ||
+          l.startsWith('o=') ||
+          l.startsWith('s=') ||
+          l.startsWith('t=') ||
+          l.startsWith('a=group:') ||
+          l.startsWith('a=msid-semantic:')
+        ) {
+          out.push(l)
+        }
+      }
+      return
+    }
+    if (section !== 'video' && section !== 'audio') return
+
+    const keepPts = new Set<string>()
+    let keptH264 = false
+    let keptVp8 = false
+    for (const l of sectionLines) {
+      const m = /^a=rtpmap:(\d+)\s+([^/\s]+)/i.exec(l)
+      if (!m) continue
+      const pt = m[1]
+      const codec = m[2].toUpperCase()
+      if (section === 'video') {
+        if (codec === 'VP8' && !keptVp8) {
+          keepPts.add(pt)
+          keptVp8 = true
+        } else if (codec === 'H264' && !keptH264) {
+          keepPts.add(pt)
+          keptH264 = true
+        }
+      } else if (section === 'audio' && codec === 'OPUS' && keepPts.size < 1) {
+        keepPts.add(pt)
+      }
+    }
+
+    let keptCandidates = 0
+    for (const l of sectionLines) {
+      if (l.startsWith('m=')) {
+        const parts = l.split(' ')
+        const header = parts.slice(0, 3)
+        const filtered = parts.slice(3).filter((pt) => keepPts.has(pt))
+        out.push([...header, ...(filtered.length > 0 ? filtered : parts.slice(3, 4))].join(' '))
+      } else if (
+        l.startsWith('c=') ||
+        l.startsWith('a=ice-ufrag:') ||
+        l.startsWith('a=ice-pwd:') ||
+        l.startsWith('a=ice-options:') ||
+        l.startsWith('a=fingerprint:') ||
+        l.startsWith('a=setup:') ||
+        l.startsWith('a=mid:') ||
+        l.startsWith('a=msid:') ||
+        l === 'a=recvonly' ||
+        l === 'a=sendonly' ||
+        l === 'a=sendrecv' ||
+        l === 'a=inactive' ||
+        l === 'a=rtcp-mux' ||
+        l === 'a=rtcp-rsize'
+      ) {
+        out.push(l)
+      } else if (l.startsWith('a=ssrc:')) {
+        if (l.includes(' cname:') || l.includes(' msid:')) {
+          out.push(l)
+        }
+      } else if (l.startsWith('a=rtpmap:') || l.startsWith('a=fmtp:')) {
+        const pt = l.split(':')[1]?.split(' ')[0]
+        if (pt && keepPts.has(pt)) out.push(l)
+      } else if (l.startsWith('a=candidate:')) {
+        const parts = l.split(' ')
+        const ip = parts[4] || ''
+        const isIpv6 = ip.includes(':')
+        if (keptCandidates < 4 && /\budp\b/i.test(l) && !isIpv6) {
+          out.push(l)
+          keptCandidates++
+        }
+      }
+    }
+  }
+
+  for (const l of lines) {
+    if (l.startsWith('m=')) {
+      flushSection()
+      sectionLines = [l]
+      section = l.startsWith('m=video') ? 'video' : l.startsWith('m=audio') ? 'audio' : 'other'
+    } else {
+      sectionLines.push(l)
+    }
+  }
+  flushSection()
+  return out.join('\r\n') + '\r\n'
+}
+
 async function encodeSignal(payload: SignalPayload): Promise<string> {
-  const json = JSON.stringify(payload)
+  const slimPayload: SignalPayload = { ...payload, s: minifySdp(payload.s) }
+  const json = JSON.stringify(slimPayload)
   const rawBytes = new TextEncoder().encode(json)
   const compressed = await compressDeflateRaw(rawBytes)
   if (compressed && compressed.length < rawBytes.length) {
@@ -81,11 +187,13 @@ async function encodeSignal(payload: SignalPayload): Promise<string> {
 
 async function decodeSignal(code: string): Promise<SignalPayload> {
   const trimmed = code.trim()
-  const rawToken = trimmed.includes('#offer=')
-    ? trimmed.split('#offer=')[1].split('&')[0]
-    : trimmed.includes('#answer=')
-      ? trimmed.split('#answer=')[1].split('&')[0]
-      : trimmed
+  const rawToken = trimmed.includes('#o=')
+    ? trimmed.split('#o=')[1].split('&')[0]
+    : trimmed.includes('#offer=')
+      ? trimmed.split('#offer=')[1].split('&')[0]
+      : trimmed.includes('#answer=')
+        ? trimmed.split('#answer=')[1].split('&')[0]
+        : trimmed
 
   let jsonBytes: Uint8Array
   if (rawToken.startsWith('z.')) {
@@ -198,7 +306,7 @@ export class WifiHostSession {
 
     const offerCode = await encodeSignal({ t: 'offer', s: localSdp })
     const base = `${window.location.origin}${window.location.pathname}`
-    const shareUrl = `${base}?wifiNode=1#offer=${offerCode}`
+    const shareUrl = `${base}?wifiNode=1#o=${offerCode}`
     this.onStatus?.('WAITING_ANSWER')
     return { offerCode, shareUrl }
   }
