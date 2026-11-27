@@ -2,6 +2,7 @@ package com.studiopocket.source.remote
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.wifi.WifiManager
 import android.util.Log
 import org.json.JSONObject
 import java.net.Inet4Address
@@ -52,14 +53,21 @@ object NetworkAddress {
             Log.w("SP-NetAddr", "Gagal membaca NetworkInterface: ${t.message}")
         }
 
-        // 2. Cadangan lewat ConnectivityManager (beberapa perangkat Android 11+ membatasi getNetworkInterfaces)
+        // 2. Cadangan lewat ConnectivityManager (pindai SEMUA jaringan, termasuk Wi-Fi/USB saat seluler aktif)
         if (context != null) {
             try {
                 val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                val active = cm?.activeNetwork
-                val props = if (active != null) cm.getLinkProperties(active) else null
-                val ifaceName = props?.interfaceName.orEmpty()
-                if (props != null && !isCellularInterface(ifaceName.lowercase())) {
+                val networks = buildList {
+                    cm?.activeNetwork?.let { add(it) }
+                    @Suppress("DEPRECATION")
+                    cm?.allNetworks?.forEach { net ->
+                        if (!contains(net)) add(net)
+                    }
+                }
+                for (net in networks) {
+                    val props = cm?.getLinkProperties(net) ?: continue
+                    val ifaceName = props.interfaceName.orEmpty()
+                    if (isCellularInterface(ifaceName.lowercase())) continue
                     val kind = classifyInterface(ifaceName.lowercase())
                     for (linkAddr in props.linkAddresses) {
                         val addr = linkAddr.address
@@ -73,6 +81,21 @@ object NetworkAddress {
                 }
             } catch (t: Throwable) {
                 Log.w("SP-NetAddr", "Gagal membaca ConnectivityManager: ${t.message}")
+            }
+
+            // 3. Cadangan WifiManager.connectionInfo untuk perangkat OEM yang membatasi NetworkInterface
+            try {
+                val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                @Suppress("DEPRECATION")
+                val rawIp = wm?.connectionInfo?.ipAddress ?: 0
+                if (rawIp != 0) {
+                    val ip = "${rawIp and 0xFF}.${(rawIp ushr 8) and 0xFF}.${(rawIp ushr 16) and 0xFF}.${(rawIp ushr 24) and 0xFF}"
+                    if (ip != "0.0.0.0" && !ip.startsWith("127.") && !found.containsKey(ip)) {
+                        found[ip] = NetworkEndpoint(ip, "wlan0", NetworkLinkKind.WIFI_HOTSPOT)
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w("SP-NetAddr", "Gagal membaca WifiManager: ${t.message}")
             }
         }
 
@@ -121,8 +144,10 @@ class RemoteHostServer(
     private val preferredPort: Int = 45678,
     private val appContext: Context? = null,
 ) {
+    private val hostId = java.util.UUID.randomUUID().toString().take(8)
+
     @Volatile
-    var pairing: PairingInfo = buatPairing()
+    var pairing: PairingInfo = buatPairing(forcedHost = "192.168.43.1")
         private set
 
     @Volatile
@@ -137,7 +162,6 @@ class RemoteHostServer(
 
     private var server: ServerSocket? = null
     private var thread: Thread? = null
-    private val hostId = java.util.UUID.randomUUID().toString().take(8)
 
     @Volatile
     private var running = false

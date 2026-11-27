@@ -109,11 +109,22 @@ class CameraNodeActivity : ComponentActivity() {
     private var client: RemoteNodeClient? = null
 
     private var useFrontCamera by mutableStateOf(false)
+    private var isPortraitMode by mutableStateOf(true)
+    private var landscapeFlipped by mutableStateOf(false)
     private var sendAudio by mutableStateOf(false)
     private var torchEnabled by mutableStateOf(false)
     private var zoomRatio by mutableFloatStateOf(1f)
     private var maxZoomRatio by mutableFloatStateOf(4f)
     private var supportsTorch by mutableStateOf(false)
+
+    private val nodeWidth: Int get() = if (isPortraitMode) 720 else 1280
+    private val nodeHeight: Int get() = if (isPortraitMode) 1280 else 720
+    private val cameraRotationDeg: Int
+        get() = when {
+            isPortraitMode -> 0
+            landscapeFlipped -> 270
+            else -> 90
+        }
 
     private var nodeStatus by mutableStateOf(RemoteNodeStatus.TERPUTUS)
     private var connectedTargetLabel by mutableStateOf("")
@@ -158,6 +169,8 @@ class CameraNodeActivity : ComponentActivity() {
                     status = nodeStatus,
                     connectedTarget = connectedTargetLabel,
                     useFrontCamera = useFrontCamera,
+                    isPortraitMode = isPortraitMode,
+                    landscapeFlipped = landscapeFlipped,
                     sendAudio = sendAudio,
                     torchEnabled = torchEnabled,
                     supportsTorch = supportsTorch,
@@ -183,6 +196,16 @@ class CameraNodeActivity : ComponentActivity() {
                     onSwitchCamera = {
                         useFrontCamera = !useFrontCamera
                         restartCameraSource()
+                    },
+                    onSelectPortraitMode = { portrait ->
+                        if (isPortraitMode != portrait) {
+                            isPortraitMode = portrait
+                            applyOrientationChange()
+                        }
+                    },
+                    onToggleLandscapeFlip = {
+                        landscapeFlipped = !landscapeFlipped
+                        applyOrientationChange()
                     },
                     onToggleSendAudio = { enabled ->
                         sendAudio = enabled
@@ -230,12 +253,33 @@ class CameraNodeActivity : ComponentActivity() {
 
     private fun startCameraPipeline() {
         if (compositor != null) return
-        val c = GlCompositor(canvasWidth = 1280, canvasHeight = 720)
+        val c = GlCompositor(canvasWidth = nodeWidth, canvasHeight = nodeHeight)
         c.encoderFps = 30
         c.previewFps = 24
         c.start()
         compositor = c
         attachCameraToCompositor(c)
+    }
+
+    private fun applyOrientationChange() {
+        val c = compositor ?: return
+        val w = nodeWidth
+        val h = nodeHeight
+        c.resizeCanvas(w, h)
+        c.updateLayerRect(LAYER_ID, LayerRect(0f, 0f, w.toFloat(), h.toFloat()))
+        cameraSource?.let { cam ->
+            c.updateLayerTransform(
+                id = LAYER_ID,
+                rotationDegrees = cameraRotationDeg,
+                isMirrored = cam.isFrontFacing,
+                sourceWidth = cam.previewWidth,
+                sourceHeight = cam.previewHeight,
+            )
+        }
+        val activeClient = client
+        if (activeClient != null) {
+            startOrRestartEncoder(c, activeClient)
+        }
     }
 
     private fun restartCameraSource() {
@@ -260,7 +304,7 @@ class CameraNodeActivity : ComponentActivity() {
                     }
                     c.updateLayerTransform(
                         id = LAYER_ID,
-                        rotationDegrees = cam.getGlRotation(),
+                        rotationDegrees = cameraRotationDeg,
                         isMirrored = cam.isFrontFacing,
                         sourceWidth = cam.previewWidth,
                         sourceHeight = cam.previewHeight,
@@ -271,9 +315,9 @@ class CameraNodeActivity : ComponentActivity() {
         cameraSource = cam
         c.addOesLayer(
             id = LAYER_ID,
-            rect = LayerRect(0f, 0f, 1280f, 720f),
+            rect = LayerRect(0f, 0f, nodeWidth.toFloat(), nodeHeight.toFloat()),
             zIndex = 0,
-            rotationDegrees = cam.getGlRotation(),
+            rotationDegrees = cameraRotationDeg,
             isMirrored = cam.isFrontFacing,
             sourceWidth = cam.previewWidth,
             sourceHeight = cam.previewHeight,
@@ -294,6 +338,9 @@ class CameraNodeActivity : ComponentActivity() {
         val nodeName = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Camera Node"
         val nodeClient = RemoteNodeClient(pairing, nodeName)
         nodeClient.onStatus = { status ->
+            if (status == RemoteNodeStatus.AKTIF) {
+                encoder?.requestKeyFrame()
+            }
             runOnUiThread { nodeStatus = status }
         }
         nodeClient.onControl = { ctrl ->
@@ -303,35 +350,54 @@ class CameraNodeActivity : ComponentActivity() {
         connectedTargetLabel = "${pairing.host}:${pairing.port}"
         nodeClient.start()
 
+        startOrRestartEncoder(c, nodeClient)
+        syncNodeAudio()
+    }
+
+    private fun startOrRestartEncoder(c: GlCompositor, nodeClient: RemoteNodeClient) {
+        c.setEncoderSurface(null)
+        encoder?.stop()
+        encoder = null
+
+        val w = nodeWidth
+        val h = nodeHeight
+        var configSent = false
         val ve = VideoEncoder(
-            width = 1280,
-            height = 720,
+            width = w,
+            height = h,
             frameRate = 30,
             bitRate = 2_500_000,
         )
         ve.onFormatAvailable = { format: MediaFormat ->
-            val sps = extractBytes(format.getByteBuffer("csd-0"))
-            val pps = extractBytes(format.getByteBuffer("csd-1"))
-            if (sps != null && pps != null) {
-                nodeClient.sendVideoConfig(1280, 720, sps, pps)
+            val csd0 = extractBytes(format.getByteBuffer("csd-0"))
+            val csd1 = extractBytes(format.getByteBuffer("csd-1")) ?: ByteArray(0)
+            if (csd0 != null && csd0.isNotEmpty()) {
+                configSent = true
+                nodeClient.sendVideoConfig(w, h, csd0, csd1)
             }
         }
         ve.onSampleAvailable = { buf: ByteBuffer, info: MediaCodec.BufferInfo ->
             val isConfig = (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
-            if (!isConfig && info.size > 0) {
+            if (info.size > 0) {
                 val data = ByteArray(info.size)
                 val dup = buf.duplicate()
                 dup.position(info.offset)
                 dup.limit(info.offset + info.size)
                 dup.get(data)
-                val isKey = (info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
-                nodeClient.sendVideoSample(data, info.presentationTimeUs, isKey)
+                if (isConfig) {
+                    if (!configSent) {
+                        configSent = true
+                        nodeClient.sendVideoConfig(w, h, data, ByteArray(0))
+                    }
+                } else {
+                    val isKey = (info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+                    nodeClient.sendVideoSample(data, info.presentationTimeUs, isKey)
+                }
             }
         }
         ve.start()
         encoder = ve
         c.setEncoderSurface(ve.inputSurface, SystemClock.elapsedRealtimeNanos())
-        syncNodeAudio()
     }
 
     private fun syncNodeAudio() {
@@ -421,6 +487,8 @@ private fun CameraNodeScreen(
     status: RemoteNodeStatus,
     connectedTarget: String,
     useFrontCamera: Boolean,
+    isPortraitMode: Boolean,
+    landscapeFlipped: Boolean,
     sendAudio: Boolean,
     torchEnabled: Boolean,
     supportsTorch: Boolean,
@@ -437,6 +505,8 @@ private fun CameraNodeScreen(
     onManualConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onSwitchCamera: () -> Unit,
+    onSelectPortraitMode: (Boolean) -> Unit,
+    onToggleLandscapeFlip: () -> Unit,
     onToggleSendAudio: (Boolean) -> Unit,
     onZoomChange: (Float) -> Unit,
     onFocusAuto: () -> Unit,
@@ -506,11 +576,18 @@ private fun CameraNodeScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Pratinjau Kamera Ringan (720p 30fps)
+            // Pratinjau Kamera Ringan (mengikuti orientasi Potret 9:16 atau Lanskap 16:9)
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
+                modifier = if (isPortraitMode) {
+                    Modifier
+                        .height(340.dp)
+                        .aspectRatio(9f / 16f)
+                        .align(Alignment.CenterHorizontally)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                },
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF18212B)),
             ) {
@@ -653,6 +730,47 @@ private fun CameraNodeScreen(
                         fontWeight = FontWeight.Bold,
                         color = Teks,
                     )
+
+                    Text(
+                        text = stringResource(R.string.camera_orientation_title),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TeksSekunder,
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FilterChip(
+                            selected = isPortraitMode,
+                            onClick = { onSelectPortraitMode(true) },
+                            label = { Text(stringResource(R.string.camera_orientation_portrait), fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFE7EFF8),
+                                selectedLabelColor = Aksen,
+                            ),
+                        )
+                        FilterChip(
+                            selected = !isPortraitMode,
+                            onClick = { onSelectPortraitMode(false) },
+                            label = { Text(stringResource(R.string.camera_orientation_landscape), fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFE7EFF8),
+                                selectedLabelColor = Aksen,
+                            ),
+                        )
+                        if (!isPortraitMode) {
+                            FilterChip(
+                                selected = landscapeFlipped,
+                                onClick = onToggleLandscapeFlip,
+                                label = { Text(stringResource(R.string.camera_orientation_flip_180), fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFFE7EFF8),
+                                    selectedLabelColor = Aksen,
+                                ),
+                            )
+                        }
+                    }
 
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),

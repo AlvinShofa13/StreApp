@@ -440,21 +440,21 @@ class GlCompositor(
 
     private fun applyTransformAdjustments(layer: CompositorLayer) {
         val matrix = layer.stMatrix
+        val stSwapped = kotlin.math.abs(matrix[1]) > kotlin.math.abs(matrix[0])
+        val rotNorm = normalizeRotation(layer.rotationDegrees)
+        val (effW, effH) = effectiveSourceSize(
+            sourceWidth = layer.sourceWidth,
+            sourceHeight = layer.sourceHeight,
+            stSwapped = stSwapped,
+            rotationDegrees = rotNorm,
+        )
+
         Matrix.translateM(matrix, 0, 0.5f, 0.5f, 0f)
-        if (layer.rotationDegrees != 0) {
-            Matrix.rotateM(matrix, 0, layer.rotationDegrees.toFloat(), 0f, 0f, 1f)
+        if (rotNorm != 0) {
+            Matrix.rotateM(matrix, 0, rotNorm.toFloat(), 0f, 0f, 1f)
         }
         if (layer.isMirrored) {
             Matrix.scaleM(matrix, 0, -1f, 1f, 1f)
-        }
-        val effW: Float
-        val effH: Float
-        if (layer.rotationDegrees == 90 || layer.rotationDegrees == 270) {
-            effW = layer.sourceHeight.toFloat()
-            effH = layer.sourceWidth.toFloat()
-        } else {
-            effW = layer.sourceWidth.toFloat()
-            effH = layer.sourceHeight.toFloat()
         }
         if (effW > 0f && effH > 0f && layer.rect.width > 0f && layer.rect.height > 0f) {
             val srcAspect = effW / effH
@@ -509,5 +509,26 @@ class GlCompositor(
 
     companion object {
         private const val TAG = "SP-GlCompositor"
+
+        internal fun normalizeRotation(degrees: Int): Int = ((degrees % 360) + 360) % 360
+
+        /**
+         * Menghitung ukuran efektif sumber setelah menggabungkan rotasi bawaan SurfaceTexture
+         * (kamera Camera2 biasanya sudah 90/270 derajat) dan rotasi tambahan dari pengguna.
+         */
+        internal fun effectiveSourceSize(
+            sourceWidth: Int,
+            sourceHeight: Int,
+            stSwapped: Boolean,
+            rotationDegrees: Int,
+        ): Pair<Float, Float> {
+            val rotNorm = normalizeRotation(rotationDegrees)
+            val rotSwapped = rotNorm == 90 || rotNorm == 270
+            return if (stSwapped xor rotSwapped) {
+                sourceHeight.toFloat() to sourceWidth.toFloat()
+            } else {
+                sourceWidth.toFloat() to sourceHeight.toFloat()
+            }
+        }
     }
 }

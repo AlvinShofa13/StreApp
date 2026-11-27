@@ -5,7 +5,7 @@
 <h1 align="center">StreApp</h1>
 
 <p align="center">
-  <strong>Aplikasi Android open-source bergaya OBS ringkas untuk merekam dan menyiarkan gabungan beberapa sumber video dan audio secara bersamaan.</strong>
+  <strong>Aplikasi Android open-source yang terinspirasi dari OBS untuk merekam dan menyiarkan gabungan beberapa sumber video dan audio secara bersamaan.</strong>
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 
 ## Ringkasan
 
-**StreApp** membawa konsep inti OBS Studio ke ponsel Android tanpa memerlukan laptop: menggabungkan feed capture card USB (UVC), rekam layar ponsel, kamera lokal, kamera dari ponsel kedua (*Camera Node*), overlay teks/gambar, serta mixer multi-sumber audio ke dalam satu scene, lalu merekamnya ke MP4 (dengan pemulihan crash) dan/atau menyiarkannya langsung lewat RTMP/RTMPS dari satu pipeline encode hardware.
+**StreApp** adalah aplikasi studio rekam dan siaran untuk ponsel Android yang terinspirasi dari OBS Studio tanpa memerlukan laptop: menggabungkan feed capture card USB (UVC), rekam layar ponsel, kamera lokal, kamera dari ponsel kedua (*Camera Node*), overlay teks/gambar/video, serta mixer multi-sumber audio ke dalam satu scene, lalu merekamnya ke MP4 (tersegmentasi aman dari crash dan otomatis digabung utuh saat berhenti) dan/atau menyiarkannya langsung lewat RTMP/RTMPS dari satu pipeline encode hardware.
 
 Proyek ini sepenuhnya gratis dan sumber terbuka: **tanpa watermark, tanpa iklan, tanpa akun paksaan, tanpa analitik pihak ketiga, dan tanpa SDK berbayar.**
 
@@ -48,8 +48,8 @@ Repositori ini sudah dilengkapi workflow GitHub Actions ([`.github/workflows/bui
 ## Fitur Utama
 
 ### Video & Kanvas Scene Interaktif
-- **Multi-Sumber Bersamaan:** Gabungkan Capture Card USB (UVC), Rekam Layar ponsel (`MediaProjection`), Kamera Depan/Belakang (`Camera2`), Camera Node (ponsel kedua lewat jaringan lokal), serta Overlay Teks dan Gambar dalam satu scene.
-- **Kanvas OBS Interaktif:** Ketuk sumber langsung pada pratinjau untuk memindah posisi (dengan *snap* otomatis ke tepi dan tengah), menarik sudut untuk mengatur besar-kecil ukuran, mengatur urutan layer, serta memilih bentuk overlay (**Persegi**, **Sudut Membulat**, **Bulat**).
+- **Multi-Sumber Bersamaan:** Gabungkan Capture Card USB (UVC), Rekam Layar ponsel (`MediaProjection`), Kamera Depan/Belakang (`Camera2`), Camera Node (ponsel kedua lewat Wi-Fi, Hotspot, atau Kabel USB Tethering), serta Overlay Teks, Gambar, dan Video Loop dalam satu scene.
+- **Kanvas Scene Interaktif:** Ketuk sumber langsung pada pratinjau untuk memindah posisi (dengan *snap* otomatis ke tepi dan tengah), menarik sudut untuk mengatur besar-kecil ukuran, memilih orientasi kamera (**Potret 9:16** / **Lanskap 16:9**), mengatur urutan layer, serta memilih bentuk overlay (**Persegi**, **Sudut Membulat**, **Bulat**).
 - **Scene & Template Cepat:** Buat, ganti nama, gandakan, dan pindah antar scene dengan satu ketukan menggunakan transisi **Potong Langsung (Cut)** atau **Pudar 0,3 detik (Fade)**.
 - **Preset & Orientasi Output:** Mendukung 480p, 720p, dan 1080p pada 30 fps maupun 60 fps, dengan pilihan orientasi **Lanskap (16:9)** atau **Potret (9:16)**.
 - **Zero-Copy GPU Pipeline:** Seluruh komposisi berjalan di OpenGL ES 3.0 (`SurfaceTexture` -> OpenGL -> `MediaCodec` H.264) tanpa penyalinan frame ke CPU, dengan satu pipeline encode bersama untuk rekaman dan siaran.

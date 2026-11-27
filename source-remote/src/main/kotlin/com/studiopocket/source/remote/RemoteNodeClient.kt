@@ -58,9 +58,7 @@ class RemoteNodeClient(
     }
 
     fun sendVideoConfig(width: Int, height: Int, sps: ByteArray, pps: ByteArray) {
-        val buffer = ByteBuffer.allocate(12 + sps.size + pps.size).order(ByteOrder.BIG_ENDIAN)
-        buffer.putInt(width).putInt(height).putInt(sps.size).put(sps).putInt(pps.size).put(pps)
-        val data = buffer.array()
+        val data = encodeVideoConfig(width, height, sps, pps)
         videoConfig = data
         tawarkan(RemoteFrame.VIDEO_CONFIG, data)
     }
@@ -180,5 +178,14 @@ class RemoteNodeClient(
 
     companion object {
         private const val TAG = "SP-NodeClient"
+
+        /**
+         * Mengemas header konfigurasi video H.264: 4 Int (16 byte) + SPS + PPS (opsional).
+         */
+        fun encodeVideoConfig(width: Int, height: Int, sps: ByteArray, pps: ByteArray): ByteArray {
+            val buffer = ByteBuffer.allocate(16 + sps.size + pps.size).order(ByteOrder.BIG_ENDIAN)
+            buffer.putInt(width).putInt(height).putInt(sps.size).put(sps).putInt(pps.size).put(pps)
+            return buffer.array()
+        }
     }
 }

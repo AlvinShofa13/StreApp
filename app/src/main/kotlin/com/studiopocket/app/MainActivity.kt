@@ -181,6 +181,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val videoPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Throwable) {
+            }
+            val id = engine.addSource(
+                type = SourceType.VIDEO,
+                name = getString(R.string.source_type_video),
+                content = uri.toString(),
+            )
+            if (id != null) {
+                engine.setTransform(id, Transform(0.05f, 0.05f, 0.36f, 0.28f))
+                engine.selectSource(id)
+            }
+        }
+    }
+
     private val exportDocumentLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("video/mp4"),
     ) { destinationUri: Uri? ->
@@ -236,6 +256,7 @@ class MainActivity : ComponentActivity() {
                         onToggleRecording = { toggleRecording() },
                         onRequestScreenCapture = { requestScreenCapture() },
                         onPickImageOverlay = { imagePickerLauncher.launch(arrayOf("image/*")) },
+                        onPickVideoOverlay = { videoPickerLauncher.launch(arrayOf("video/*")) },
                         onOpenCameraNodeScanner = {
                             startActivity(Intent(this@MainActivity, CameraNodeActivity::class.java))
                         },
@@ -311,6 +332,7 @@ class MainActivity : ComponentActivity() {
 
     private fun toggleRecording() {
         val state = engine.state.value
+        if (state.savingRecording) return
         if (state.recording) {
             engine.stopRecording()
         } else {
@@ -338,6 +360,7 @@ private fun StudioWorkspaceScreen(
     onToggleRecording: () -> Unit,
     onRequestScreenCapture: () -> Unit,
     onPickImageOverlay: () -> Unit,
+    onPickVideoOverlay: () -> Unit,
     onOpenCameraNodeScanner: () -> Unit,
     onExportVideo: (File) -> Unit,
     onToggleDebugOverlay: () -> Unit,
@@ -600,6 +623,7 @@ private fun StudioWorkspaceScreen(
                                 appVersion = appVersion,
                                 onRequestScreenCapture = onRequestScreenCapture,
                                 onPickImageOverlay = onPickImageOverlay,
+                                onPickVideoOverlay = onPickVideoOverlay,
                                 onOpenCameraNodeScanner = onOpenCameraNodeScanner,
                             )
                         }
@@ -666,6 +690,7 @@ private fun StudioWorkspaceScreen(
                     appVersion = appVersion,
                     onRequestScreenCapture = onRequestScreenCapture,
                     onPickImageOverlay = onPickImageOverlay,
+                    onPickVideoOverlay = onPickVideoOverlay,
                     onOpenCameraNodeScanner = onOpenCameraNodeScanner,
                 )
 
@@ -744,6 +769,7 @@ private fun PrimaryTransportBar(
     ) {
         Button(
             onClick = onToggleRecording,
+            enabled = !state.savingRecording,
             modifier = Modifier
                 .weight(1f)
                 .height(52.dp),
@@ -764,17 +790,19 @@ private fun PrimaryTransportBar(
                         ),
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                val label = if (state.recording) {
-                    val detik = state.recordingMs / 1000
-                    val durasi = String.format(
-                        Locale.US,
-                        "%02d:%02d",
-                        detik / 60,
-                        detik % 60,
-                    )
-                    "${stringResource(R.string.recording_stop)} • $durasi"
-                } else {
-                    stringResource(R.string.recording_start)
+                val label = when {
+                    state.savingRecording -> stringResource(R.string.recording_saving)
+                    state.recording -> {
+                        val detik = state.recordingMs / 1000
+                        val durasi = String.format(
+                            Locale.US,
+                            "%02d:%02d",
+                            detik / 60,
+                            detik % 60,
+                        )
+                        "${stringResource(R.string.recording_stop)} • $durasi"
+                    }
+                    else -> stringResource(R.string.recording_start)
                 }
                 Text(
                     text = label,
@@ -873,6 +901,7 @@ private fun StudioDockContent(
     appVersion: String,
     onRequestScreenCapture: () -> Unit,
     onPickImageOverlay: () -> Unit,
+    onPickVideoOverlay: () -> Unit,
     onOpenCameraNodeScanner: () -> Unit,
 ) {
     when (tab) {
@@ -881,6 +910,7 @@ private fun StudioDockContent(
             engine = engine,
             onRequestScreenCapture = onRequestScreenCapture,
             onPickImageOverlay = onPickImageOverlay,
+            onPickVideoOverlay = onPickVideoOverlay,
         )
 
         StudioTab.MIXER -> AudioMixerPanel(

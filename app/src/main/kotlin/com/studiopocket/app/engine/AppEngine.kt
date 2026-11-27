@@ -32,8 +32,10 @@ import com.studiopocket.core.video.EncodedSink
 import com.studiopocket.core.video.GlCompositor
 import com.studiopocket.core.video.LayerRect
 import com.studiopocket.core.video.LayerShape as VideoShape
+import com.studiopocket.core.video.Mp4SegmentMerger
 import com.studiopocket.core.video.RecordingPipeline
 import com.studiopocket.core.video.TestPatternSource
+import com.studiopocket.core.video.VideoOverlaySource
 import com.studiopocket.model.LayerShape
 import com.studiopocket.model.Preset
 import com.studiopocket.model.Project
@@ -116,6 +118,8 @@ class AppEngine(val context: Context) {
         var layerId: String? = null,
         var remoteAudio: RemoteAudioInput? = null,
         var overlayHash: Int = 0,
+        var remoteWidth: Int = 1280,
+        var remoteHeight: Int = 720,
     )
 
     private inner class PipelineTap : EncodedSink {
@@ -230,6 +234,30 @@ class AppEngine(val context: Context) {
                 compositor?.updateLayerZIndex(id, z)
                 compositor?.setLayerVisible(id, s.visible)
                 compositor?.updateLayerShape(id, videoShape(s.shape))
+                when (val src = r.source) {
+                    is CameraSource -> compositor?.updateLayerTransform(
+                        id = id,
+                        rotationDegrees = s.rotationDegrees,
+                        isMirrored = src.isFrontFacing,
+                        sourceWidth = src.previewWidth,
+                        sourceHeight = src.previewHeight,
+                    )
+                    is RemoteSource -> compositor?.updateLayerTransform(
+                        id = id,
+                        rotationDegrees = s.rotationDegrees,
+                        isMirrored = false,
+                        sourceWidth = r.remoteWidth,
+                        sourceHeight = r.remoteHeight,
+                    )
+                    is VideoOverlaySource -> compositor?.updateLayerTransform(
+                        id = id,
+                        rotationDegrees = s.rotationDegrees,
+                        isMirrored = false,
+                        sourceWidth = r.remoteWidth,
+                        sourceHeight = r.remoteHeight,
+                    )
+                    else -> Unit
+                }
             }
             if (s.visible) r.source?.start()
         }
@@ -266,9 +294,14 @@ class AppEngine(val context: Context) {
                     override fun onStatusChanged(src: com.studiopocket.model.Source, status: SourceStatus) {
                         pasangListenerStatus(model.id, status)
                         if (status == SourceStatus.AKTIF) {
+                            val currentRot = mutableState.value.project.scenes
+                                .asSequence()
+                                .flatMap { it.sources.asSequence() }
+                                .firstOrNull { it.id == model.id }
+                                ?.rotationDegrees ?: model.rotationDegrees
                             c.updateLayerTransform(
                                 model.id,
-                                rotationDegrees = source.getGlRotation(),
+                                rotationDegrees = currentRot,
                                 isMirrored = source.isFrontFacing,
                                 sourceWidth = source.previewWidth,
                                 sourceHeight = source.previewHeight,
@@ -280,7 +313,7 @@ class AppEngine(val context: Context) {
                     model.id,
                     rectDari(model.transform),
                     zIndex = 0,
-                    rotationDegrees = source.getGlRotation(),
+                    rotationDegrees = model.rotationDegrees,
                     isMirrored = source.isFrontFacing,
                     sourceWidth = source.previewWidth,
                     sourceHeight = source.previewHeight,
@@ -311,7 +344,53 @@ class AppEngine(val context: Context) {
                     synchronized(runtimeLock) { runtimes[model.id]?.remoteAudio }?.push(pcm, frames)
                 }
                 pasangListener(source)
-                c.addOesLayer(model.id, rectDari(model.transform), zIndex = 0, shape = videoShape(model.shape)) { texture ->
+                c.addOesLayer(
+                    model.id,
+                    rectDari(model.transform),
+                    zIndex = 0,
+                    rotationDegrees = model.rotationDegrees,
+                    shape = videoShape(model.shape),
+                ) { texture ->
+                    source.setPreview(texture)
+                }
+                VideoRuntime(model.id, source, model.id)
+            }
+
+            SourceType.VIDEO -> {
+                val source = VideoOverlaySource(
+                    context = context,
+                    id = model.id,
+                    name = model.name,
+                    uriString = model.content.orEmpty(),
+                    onVideoSizeChanged = { w, h ->
+                        synchronized(runtimeLock) {
+                            runtimes[model.id]?.let {
+                                it.remoteWidth = w
+                                it.remoteHeight = h
+                            }
+                        }
+                        val currentRot = mutableState.value.project.scenes
+                            .asSequence()
+                            .flatMap { it.sources.asSequence() }
+                            .firstOrNull { it.id == model.id }
+                            ?.rotationDegrees ?: model.rotationDegrees
+                        c.updateLayerTransform(
+                            id = model.id,
+                            rotationDegrees = currentRot,
+                            isMirrored = false,
+                            sourceWidth = w,
+                            sourceHeight = h,
+                        )
+                    },
+                )
+                pasangListener(source)
+                c.addOesLayer(
+                    model.id,
+                    rectDari(model.transform),
+                    zIndex = 0,
+                    rotationDegrees = model.rotationDegrees,
+                    shape = videoShape(model.shape),
+                ) { texture ->
                     source.setPreview(texture)
                 }
                 VideoRuntime(model.id, source, model.id)
@@ -485,6 +564,13 @@ class AppEngine(val context: Context) {
         val scene = mutableState.value.project.activeScene ?: return
         val source = scene.source(id) ?: return
         updateSource(source.copy(shape = shape))
+    }
+
+    fun setSourceRotation(id: String, degrees: Int) {
+        val scene = mutableState.value.project.activeScene ?: return
+        val source = scene.source(id) ?: return
+        val norm = ((degrees % 360) + 360) % 360
+        updateSource(source.copy(rotationDegrees = norm))
     }
 
     fun setVisible(id: String, visible: Boolean) {
@@ -830,7 +916,7 @@ class AppEngine(val context: Context) {
             context = context,
             compositor = c,
             outputFile = file,
-            segmentIntervalUs = 10_000_000L,
+            segmentIntervalUs = 30_000_000L,
             frameRate = res.fps,
             videoBitrate = res.bitrateKbps * 1000,
             useBuiltinMic = (audioEngine == null),
@@ -870,19 +956,32 @@ class AppEngine(val context: Context) {
     fun stopRecording() {
         val p = pipeline ?: return
         pipeline = null
-        val files = p.stop()
-        val lastSaved = files.lastOrNull() ?: p.outputFile
         RecordingService.stop(context)
         tulisMarker()
         mutableState.update {
             it.copy(
                 recording = false,
+                savingRecording = true,
                 recordingMs = 0,
-                lastFile = lastSaved,
-                reviewFile = lastSaved,
             )
         }
         if (publisher != null) stopStream()
+
+        scope.launch(Dispatchers.IO) {
+            val files = p.stop()
+            val finalFile = if (files.size > 1) {
+                Mp4SegmentMerger.merge(files, p.outputFile)
+            } else {
+                files.firstOrNull() ?: p.outputFile
+            }
+            mutableState.update {
+                it.copy(
+                    savingRecording = false,
+                    lastFile = finalFile,
+                    reviewFile = finalFile,
+                )
+            }
+        }
     }
 
     fun clearReviewFile() {
@@ -998,6 +1097,7 @@ class AppEngine(val context: Context) {
                 setTransform(id, Transform(0.64f, 0.05f, 0.32f, 0.34f))
             }
         }
+        mutableState.update { it.copy(remoteErrorDetail = null) }
         scope.launch(Dispatchers.IO) {
             try {
                 val server = RemoteHostServer(
@@ -1034,6 +1134,26 @@ class AppEngine(val context: Context) {
                                 }
                             }
                         },
+                        onVideoSizeChanged = { width, height ->
+                            synchronized(runtimeLock) {
+                                runtime.remoteWidth = width
+                                runtime.remoteHeight = height
+                            }
+                            val currentRot = mutableState.value.project.scenes
+                                .asSequence()
+                                .flatMap { it.sources.asSequence() }
+                                .firstOrNull { it.id == runtime.modelId }
+                                ?.rotationDegrees ?: 0
+                            runtime.layerId?.let { layerId ->
+                                compositor?.updateLayerTransform(
+                                    id = layerId,
+                                    rotationDegrees = currentRot,
+                                    isMirrored = false,
+                                    sourceWidth = width,
+                                    sourceHeight = height,
+                                )
+                            }
+                        },
                     ).also { source.attach(it) }
                 }
                 server.onPairingRejected = {
@@ -1045,6 +1165,7 @@ class AppEngine(val context: Context) {
                     it.copy(
                         remotePairing = pairing,
                         remoteEndpoints = server.availableEndpoints,
+                        remoteErrorDetail = null,
                         errorRes = null,
                         errorDetail = null,
                     )
@@ -1054,6 +1175,7 @@ class AppEngine(val context: Context) {
                 val detail = "${t.javaClass.simpleName}: ${t.message ?: ""}".trim()
                 mutableState.update {
                     it.copy(
+                        remoteErrorDetail = detail,
                         errorRes = R.string.remote_error_start,
                         errorDetail = detail,
                     )
@@ -1091,6 +1213,7 @@ class AppEngine(val context: Context) {
                 remotePairing = null,
                 remoteEndpoints = emptyList(),
                 remoteNodes = emptyList(),
+                remoteErrorDetail = null,
             )
         }
         if (srv != null) {

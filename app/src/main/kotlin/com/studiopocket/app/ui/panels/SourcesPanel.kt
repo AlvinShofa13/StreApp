@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.PhotoCameraFront
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.ScreenShare
@@ -66,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.studiopocket.app.R
@@ -97,6 +99,7 @@ fun SourcesPanel(
     engine: AppEngine,
     onRequestScreenCapture: () -> Unit,
     onPickImageOverlay: () -> Unit,
+    onPickVideoOverlay: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scene = state.project.activeScene
@@ -310,6 +313,10 @@ fun SourcesPanel(
                     AddSourceOptionRow(Icons.Outlined.Image, stringResource(R.string.source_type_image)) {
                         showAddDialog = false
                         onPickImageOverlay()
+                    }
+                    AddSourceOptionRow(Icons.Outlined.Movie, stringResource(R.string.source_type_video)) {
+                        showAddDialog = false
+                        onPickVideoOverlay()
                     }
                     HorizontalDivider(color = Garis, modifier = Modifier.padding(vertical = 4.dp))
                     AddSourceOptionRow(Icons.Outlined.Tune, stringResource(R.string.source_type_test)) {
@@ -533,6 +540,40 @@ private fun SelectedSourceTransformCard(
                 }
             }
 
+            // Pemilih Orientasi (Potret / Lanskap) untuk Kamera HP Utama, Camera Node, & Overlay Video
+            if (source.type == SourceType.CAMERA || source.type == SourceType.REMOTE || source.type == SourceType.VIDEO) {
+                HorizontalDivider(color = Garis, modifier = Modifier.padding(vertical = 4.dp))
+                Text(
+                    text = stringResource(R.string.camera_orientation_title),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TeksSekunder,
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    val orientations = listOf(
+                        0 to R.string.camera_orientation_portrait,
+                        90 to R.string.camera_orientation_landscape,
+                        270 to R.string.camera_orientation_landscape_alt,
+                    )
+                    orientations.forEach { (deg, labelRes) ->
+                        FilterChip(
+                            selected = source.rotationDegrees == deg,
+                            onClick = { engine.setSourceRotation(source.id, deg) },
+                            label = { Text(stringResource(labelRes), fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFE7EFF8),
+                                selectedLabelColor = Aksen,
+                            ),
+                            modifier = Modifier.heightIn(min = 40.dp),
+                        )
+                    }
+                }
+            }
+
             // Kontrol Kamera Lokal (FR-5.3) jika sumber adalah kamera
             if (source.type == SourceType.CAMERA) {
                 val cam = engine.cameraSource(source.id)
@@ -648,6 +689,7 @@ private fun SourceLayerRow(
         SourceType.REMOTE -> Icons.Outlined.Devices
         SourceType.TEXT -> Icons.Outlined.TextFields
         SourceType.IMAGE -> Icons.Outlined.Image
+        SourceType.VIDEO -> Icons.Outlined.Movie
         SourceType.TEST -> Icons.Outlined.Tune
     }
     val statusColor = when (status) {
@@ -668,79 +710,97 @@ private fun SourceLayerRow(
         shape = RoundedCornerShape(10.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
             .clickable { onSelect() },
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (selected) Aksen else TeksSekunder,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = source.name,
-                    fontSize = 13.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                    color = if (source.visible) Teks else TeksSekunder,
-                )
-                Text(
-                    text = "$statusLabel • ${(source.transform.width * 100).roundToInt()}% x ${(source.transform.height * 100).roundToInt()}%",
-                    fontSize = 11.sp,
-                    color = statusColor,
-                )
-            }
-
-            if ((source.type == SourceType.UVC || source.type == SourceType.CAMERA) &&
-                status != SourceStatus.AKTIF
+            // Baris 1: Ikon + Nama & Status penuh selebar layar (mencegah teks pecah vertikal di layar sempit)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onReconnect) {
-                    Icon(
-                        imageVector = Icons.Outlined.Refresh,
-                        contentDescription = stringResource(R.string.source_reconnect),
-                        tint = Peringatan,
-                        modifier = Modifier.size(20.dp),
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (selected) Aksen else TeksSekunder,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = source.name,
+                        fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                        color = if (source.visible) Teks else TeksSekunder,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "$statusLabel • ${(source.transform.width * 100).roundToInt()}% x ${(source.transform.height * 100).roundToInt()}%",
+                        fontSize = 11.sp,
+                        color = statusColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
-            IconButton(onClick = onMoveUp, enabled = canMoveUp) {
-                Icon(
-                    imageVector = Icons.Outlined.KeyboardArrowUp,
-                    contentDescription = stringResource(R.string.source_layer_up),
-                    tint = if (canMoveUp) Teks else Garis,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            IconButton(onClick = onMoveDown, enabled = canMoveDown) {
-                Icon(
-                    imageVector = Icons.Outlined.KeyboardArrowDown,
-                    contentDescription = stringResource(R.string.source_layer_down),
-                    tint = if (canMoveDown) Teks else Garis,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            IconButton(onClick = onToggleVisible) {
-                Icon(
-                    imageVector = if (source.visible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
-                    contentDescription = stringResource(
-                        if (source.visible) R.string.source_hidden else R.string.source_visible,
-                    ),
-                    tint = if (source.visible) Aksen else TeksSekunder,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            IconButton(onClick = onRemove) {
-                Icon(
-                    imageVector = Icons.Outlined.DeleteOutline,
-                    contentDescription = stringResource(R.string.source_remove),
-                    tint = Rekam,
-                    modifier = Modifier.size(20.dp),
-                )
+
+            // Baris 2: Tombol aksi dengan ukuran sentuh penuh 48 dp tanpa menyempitkan judul
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if ((source.type == SourceType.UVC || source.type == SourceType.CAMERA) &&
+                    status != SourceStatus.AKTIF
+                ) {
+                    IconButton(onClick = onReconnect) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = stringResource(R.string.source_reconnect),
+                            tint = Peringatan,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                IconButton(onClick = onMoveUp, enabled = canMoveUp) {
+                    Icon(
+                        imageVector = Icons.Outlined.KeyboardArrowUp,
+                        contentDescription = stringResource(R.string.source_layer_up),
+                        tint = if (canMoveUp) Teks else Garis,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                IconButton(onClick = onMoveDown, enabled = canMoveDown) {
+                    Icon(
+                        imageVector = Icons.Outlined.KeyboardArrowDown,
+                        contentDescription = stringResource(R.string.source_layer_down),
+                        tint = if (canMoveDown) Teks else Garis,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                IconButton(onClick = onToggleVisible) {
+                    Icon(
+                        imageVector = if (source.visible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                        contentDescription = stringResource(
+                            if (source.visible) R.string.source_hidden else R.string.source_visible,
+                        ),
+                        tint = if (source.visible) Aksen else TeksSekunder,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = stringResource(R.string.source_remove),
+                        tint = Rekam,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }

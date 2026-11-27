@@ -12,8 +12,8 @@ android {
         applicationId = "com.studiopocket.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.1.3"
+        versionCode = 8
+        versionName = "1.1.7"
     }
 
     buildFeatures {

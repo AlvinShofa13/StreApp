@@ -131,6 +131,7 @@
     <string name="source_type_remote">Camera Node (Ponsel Lain)</string>
     <string name="source_type_text">Overlay Teks</string>
     <string name="source_type_image">Overlay Gambar / Logo</string>
+    <string name="source_type_video">Overlay Video</string>
     <string name="source_type_test">Pola Uji (Diagnostik)</string>
     <string name="source_status_active">Aktif</string>
     <string name="source_status_standby">Siaga</string>
@@ -152,6 +153,11 @@
     <string name="camera_focus_lock">Kunci Fokus</string>
     <string name="camera_mirror">Balik Cermin</string>
     <string name="camera_torch">Lampu Senter</string>
+    <string name="camera_orientation_title">Orientasi Kamera</string>
+    <string name="camera_orientation_portrait">Potret (9:16)</string>
+    <string name="camera_orientation_landscape">Lanskap (16:9)</string>
+    <string name="camera_orientation_landscape_alt">Lanskap Balik</string>
+    <string name="camera_orientation_flip_180">Putar 180°</string>
     <string name="screen_permission_needed">Izin rekam layar diperlukan untuk sumber ini.</string>
 
     <!-- Audio Mixer -->
@@ -230,6 +236,12 @@
     <string name="remote_usb_cable_hint">Opsi Kabel USB: Hubungkan kedua HP lewat kabel USB/OTG lalu aktifkan Penambatan USB (USB Tethering) di salah satu HP untuk koneksi tanpa Wi-Fi berlatensi rendah.</string>
     <string name="remote_link_usb">Kabel USB</string>
     <string name="remote_link_wifi">Wi-Fi / Hotspot</string>
+    <string name="remote_enlarge_qr">Perbesar QR</string>
+    <string name="remote_qr_dialog_title">Kode QR Pairing Host</string>
+    <string name="remote_qr_generate_failed">Gagal merender gambar QR. Gunakan IP, Port, dan Token di bawah secara manual.</string>
+    <string name="remote_manual_ip_hint">IP Host manual (bila hotspot tidak terdeteksi)</string>
+    <string name="remote_apply_ip">Pakai IP</string>
+    <string name="recording_saving">Menyimpan rekaman…</string>
 
     <!-- Settings Options -->
     <string name="settings_preset">Preset Kualitas</string>

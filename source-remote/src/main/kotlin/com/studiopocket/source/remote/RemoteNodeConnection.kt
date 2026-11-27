@@ -27,6 +27,7 @@ class RemoteNodeConnection(
     private val textureProvider: () -> SurfaceTexture?,
     private val onPcm: (ShortArray, Int) -> Unit,
     private val onStatus: (RemoteNodeStatus) -> Unit,
+    private val onVideoSizeChanged: ((Int, Int) -> Unit)? = null,
 ) {
     private val channel = SecureChannel(socket.getInputStream(), socket.getOutputStream(), token)
     private val decoderLock = Any()
@@ -79,11 +80,14 @@ class RemoteNodeConnection(
                 when (frame.type) {
                     RemoteFrame.VIDEO_CONFIG -> {
                         videoConfig = frame.payload
-                        if (videoWidth == 0) {
-                            val b = ByteBuffer.wrap(frame.payload).order(ByteOrder.BIG_ENDIAN)
-                            if (frame.payload.size >= 8) {
-                                videoWidth = b.int
-                                videoHeight = b.int
+                        val b = ByteBuffer.wrap(frame.payload).order(ByteOrder.BIG_ENDIAN)
+                        if (frame.payload.size >= 8) {
+                            val newW = b.int
+                            val newH = b.int
+                            if (newW > 0 && newH > 0 && (newW != videoWidth || newH != videoHeight)) {
+                                videoWidth = newW
+                                videoHeight = newH
+                                surfaceDirty = true
                             }
                         }
                         siapkanDecoder()
@@ -134,12 +138,14 @@ class RemoteNodeConnection(
                 if (spsLen <= 0 || spsLen > b.remaining()) return false
                 val sps = ByteArray(spsLen).also { b.get(it) }
                 val ppsLen = b.int
-                if (ppsLen <= 0 || ppsLen > b.remaining()) return false
-                val pps = ByteArray(ppsLen).also { b.get(it) }
+                if (ppsLen < 0 || ppsLen > b.remaining()) return false
+                val pps = if (ppsLen > 0) ByteArray(ppsLen).also { b.get(it) } else ByteArray(0)
 
                 val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
                 format.setByteBuffer("csd-0", ByteBuffer.wrap(sps))
-                format.setByteBuffer("csd-1", ByteBuffer.wrap(pps))
+                if (pps.isNotEmpty()) {
+                    format.setByteBuffer("csd-1", ByteBuffer.wrap(pps))
+                }
                 val codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
                 val surface = Surface(texture)
                 codec.configure(format, surface, null, 0)
@@ -150,6 +156,7 @@ class RemoteNodeConnection(
                 videoWidth = width
                 videoHeight = height
                 surfaceDirty = false
+                onVideoSizeChanged?.invoke(width, height)
                 Log.i(TAG, "Decoder Node $nodeName siap ($width x $height)")
                 return true
             } catch (t: Throwable) {

@@ -18,18 +18,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -372,6 +378,22 @@ fun SettingsPanel(
                 )
 
                 val pairing = state.remotePairing
+                if (!state.remoteErrorDetail.isNullOrBlank()) {
+                    Surface(
+                        color = Rekam.copy(alpha = 0.10f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Rekam.copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "${stringResource(R.string.remote_error_start)} (${state.remoteErrorDetail})",
+                            fontSize = 11.sp,
+                            color = Rekam,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(10.dp),
+                        )
+                    }
+                }
                 if (pairing == null) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -409,6 +431,9 @@ fun SettingsPanel(
                         }
                     }
                 } else {
+                    var showQrDialog by remember(pairing.token) { mutableStateOf(false) }
+                    var manualIpInput by remember(pairing.host) { mutableStateOf(pairing.host) }
+
                     Text(
                         text = stringResource(R.string.remote_hint),
                         fontSize = 11.sp,
@@ -439,23 +464,70 @@ fun SettingsPanel(
                             }
                         }
                     }
-                    val qrBitmap = remember(pairing) { generateQrBitmap(pairing.toUri(), 420) }
+                    val qrBitmap = remember(pairing) { generateQrBitmap(pairing.toUri(), 480) }
                     if (qrBitmap != null) {
                         Image(
                             bitmap = qrBitmap.asImageBitmap(),
                             contentDescription = stringResource(R.string.remote_title),
                             modifier = Modifier
-                                .size(190.dp)
+                                .size(200.dp)
                                 .align(Alignment.CenterHorizontally),
+                        )
+                        OutlinedButton(
+                            onClick = { showQrDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Aksen),
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .heightIn(min = 48.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.remote_enlarge_qr),
+                                fontSize = 12.sp,
+                                color = Aksen,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = stringResource(R.string.remote_qr_generate_failed),
+                            fontSize = 11.sp,
+                            color = Peringatan,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
                         )
                     }
                     Text(
                         text = "${pairing.host}:${pairing.port} • Token: ${pairing.token}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
                         color = Teks,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
+                    // Input IP Host manual jika OEM menyembunyikan IP hotspot (mis. 192.168.x.1)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = manualIpInput,
+                            onValueChange = { manualIpInput = it },
+                            label = { Text(stringResource(R.string.remote_manual_ip_hint), fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                val trimmed = manualIpInput.trim()
+                                if (trimmed.isNotEmpty()) engine.selectRemoteHostIp(trimmed)
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Aksen),
+                            modifier = Modifier.height(52.dp),
+                        ) {
+                            Text(stringResource(R.string.remote_apply_ip), fontSize = 12.sp, color = Aksen)
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -480,6 +552,52 @@ fun SettingsPanel(
                         ) {
                             Text(stringResource(R.string.remote_stop_host), fontSize = 12.sp, color = Rekam)
                         }
+                    }
+
+                    if (showQrDialog && qrBitmap != null) {
+                        AlertDialog(
+                            onDismissRequest = { showQrDialog = false },
+                            title = {
+                                Text(
+                                    text = stringResource(R.string.remote_qr_dialog_title),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Teks,
+                                )
+                            },
+                            text = {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Image(
+                                        bitmap = qrBitmap.asImageBitmap(),
+                                        contentDescription = stringResource(R.string.remote_qr_dialog_title),
+                                        modifier = Modifier.size(260.dp),
+                                    )
+                                    Text(
+                                        text = "${pairing.host}:${pairing.port}",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Teks,
+                                    )
+                                    Text(
+                                        text = "Token: ${pairing.token}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Aksen,
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showQrDialog = false }) {
+                                    Text(stringResource(R.string.settings_close), color = Aksen, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            containerColor = Kartu,
+                            shape = RoundedCornerShape(16.dp),
+                        )
                     }
                 }
             }

@@ -56,6 +56,7 @@ data class StreamUi(
 data class EngineState(
     val project: Project = Project(),
     val recording: Boolean = false,
+    val savingRecording: Boolean = false,
     val recordingMs: Long = 0,
     val recordingFile: String? = null,
     val markers: Int = 0,
@@ -72,6 +73,7 @@ data class EngineState(
     val remotePairing: PairingInfo? = null,
     val remoteEndpoints: List<NetworkEndpoint> = emptyList(),
     val remoteNodes: List<String> = emptyList(),
+    val remoteErrorDetail: String? = null,
     val errorRes: Int? = null,
     val errorDetail: String? = null,
     val lastFile: File? = null,

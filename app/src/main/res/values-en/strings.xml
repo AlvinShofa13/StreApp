@@ -131,6 +131,7 @@
     <string name="source_type_remote">Camera Node (Second Phone)</string>
     <string name="source_type_text">Text Overlay</string>
     <string name="source_type_image">Image / Logo Overlay</string>
+    <string name="source_type_video">Video Overlay</string>
     <string name="source_type_test">Test Pattern (Diagnostic)</string>
     <string name="source_status_active">Active</string>
     <string name="source_status_standby">Standby</string>
@@ -152,6 +153,11 @@
     <string name="camera_focus_lock">Lock Focus</string>
     <string name="camera_mirror">Mirror</string>
     <string name="camera_torch">Torch</string>
+    <string name="camera_orientation_title">Camera Orientation</string>
+    <string name="camera_orientation_portrait">Portrait (9:16)</string>
+    <string name="camera_orientation_landscape">Landscape (16:9)</string>
+    <string name="camera_orientation_landscape_alt">Landscape Flipped</string>
+    <string name="camera_orientation_flip_180">Rotate 180°</string>
     <string name="screen_permission_needed">Screen capture permission is required for this source.</string>
 
     <!-- Audio Mixer -->
@@ -230,6 +236,12 @@
     <string name="remote_usb_cable_hint">USB Cable option: Connect both phones via USB/OTG cable and enable USB Tethering on either phone for low-latency wired pairing without Wi-Fi.</string>
     <string name="remote_link_usb">USB Cable</string>
     <string name="remote_link_wifi">Wi-Fi / Hotspot</string>
+    <string name="remote_enlarge_qr">Enlarge QR</string>
+    <string name="remote_qr_dialog_title">Host Pairing QR Code</string>
+    <string name="remote_qr_generate_failed">Could not render QR image. Enter the IP, Port, and Token below manually.</string>
+    <string name="remote_manual_ip_hint">Manual Host IP (if hotspot IP is hidden)</string>
+    <string name="remote_apply_ip">Use IP</string>
+    <string name="recording_saving">Saving recording…</string>
 
     <!-- Settings Options -->
     <string name="settings_preset">Quality Preset</string>

@@ -3,7 +3,7 @@ package com.studiopocket.model
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class SourceType { UVC, CAMERA, SCREEN, REMOTE, TEST, IMAGE, TEXT }
+enum class SourceType { UVC, CAMERA, SCREEN, REMOTE, TEST, IMAGE, TEXT, VIDEO }
 
 /** Bentuk potongan layer video. */
 @Serializable
@@ -47,6 +47,8 @@ data class SceneSource(
     /** Isi untuk overlay teks; URI gambar untuk overlay gambar. */
     val content: String? = null,
     val textSize: Float = 0.06f,
+    /** Rotasi manual kamera/sumber dalam derajat (0 = Potret bawaan, 90 / 270 = Lanskap). */
+    val rotationDegrees: Int = 0,
 ) {
-    val isOverlay: Boolean get() = type == SourceType.TEXT || type == SourceType.IMAGE
+    val isOverlay: Boolean get() = type == SourceType.TEXT || type == SourceType.IMAGE || type == SourceType.VIDEO
 }
